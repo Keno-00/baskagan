@@ -1,0 +1,23 @@
+{
+  "name": "dado-ide-ui",
+  "private": true,
+  "scripts": {
+    "build": "esbuild ui/workbench.js --bundle --format=iife --target=chrome110 --outfile=assets/workbench.js --minify",
+    "test": "node tests/scene.test.cjs && node tests/scene.integration.cjs && node tests/workbench.integration.cjs"
+  },
+  "dependencies": {
+    "codemirror": "^6",
+    "@codemirror/commands": "^6",
+    "@codemirror/view": "^6",
+    "@codemirror/lang-rust": "^6",
+    "@codemirror/lang-javascript": "^6",
+    "@codemirror/lang-json": "^6",
+    "@codemirror/lang-python": "^6",
+    "@codemirror/lang-markdown": "^6",
+    "@codemirror/lang-html": "^6",
+    "@codemirror/lang-css": "^6",
+    "@xterm/xterm": "^5",
+    "@xterm/addon-fit": "^0.10"
+  },
+  "devDependencies": { "esbuild": "^0.25", "playwright": "^1" }
+}

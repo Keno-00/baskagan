@@ -35,6 +35,11 @@ const docsScene = {
     await docs.click();
     assert.equal(await page.evaluate(() => messages.filter(m => m.action === 'enter').length), 0, 'single click must not enter');
     assert.equal(await docs.getAttribute('aria-pressed'), 'true');
+    const file = page.locator('g[aria-label="README.md"]');
+    await file.click();
+    assert.equal(await file.getAttribute('aria-pressed'), 'true', 'file nodes must be selectable');
+    await file.dblclick();
+    assert.equal(await page.evaluate(() => messages.filter(m => m.action === 'open_file').at(-1).path), root + '\\README.md');
     await docs.dblclick();
     assert.equal(await page.evaluate(() => messages.filter(m => m.action === 'enter').at(-1).path), root + '\\docs');
     await page.evaluate(graph => dadoScene.setGraph(graph), docsScene);

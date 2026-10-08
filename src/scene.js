@@ -52,14 +52,16 @@
     }
     function select(path) {
         selected = path;
-        hint(`Selected folder: ${path}`, 1400);
+        const node = scene?.tree.nodes.find(n => n.path === path);
+        send({ action: 'select', path, directory: node?.directory ?? false });
+        hint(`Selected ${node?.directory ? 'folder' : 'file'}: ${path}`, 1400);
         schedule();
     }
     function makeNode(node) {
         const group = el('g', {
             class: node.directory ? 'folder-node' : 'file-node',
-            role: node.directory ? 'button' : 'img',
-            tabindex: node.directory ? '0' : '-1',
+            role: 'button',
+            tabindex: '0',
             'aria-label': node.label,
         });
         group.append(el('circle', { class: 'hit-area', r: 23 }));
@@ -69,21 +71,27 @@
         group.append(dot, label);
         listen(group, 'mouseenter', () => hint(node.directory
             ? `${node.path} · Click to anchor; double-click to enter`
-            : node.path));
+            : `${node.path} · Click to select; double-click to edit`));
         listen(group, 'mouseleave', () => hint(null));
         listen(group, 'focus', () => hint(node.directory ? `${node.path} · Space to anchor; Enter to enter` : node.path));
         listen(group, 'blur', () => hint(null));
         listen(group, 'click', event => {
             event.stopPropagation();
-            if (node.directory && moved < 5) select(node.path);
+            if (moved < 5) select(node.path);
         });
         listen(group, 'dblclick', event => {
             event.stopPropagation();
-            if (node.directory && moved < 5) navigate(node.path);
+            if (moved < 5) {
+                if (node.directory) navigate(node.path);
+                else send({ action: 'open_file', path: node.path });
+            }
         });
         listen(group, 'keydown', event => {
-            if (!node.directory) return;
-            if (event.key === 'Enter') { event.preventDefault(); navigate(node.path); }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (node.directory) navigate(node.path);
+                else send({ action: 'open_file', path: node.path });
+            }
             if (event.key === ' ') { event.preventDefault(); select(node.path); }
         });
         nodesLayer.append(group);
@@ -264,7 +272,7 @@
     listen(svg, 'pointerup', endDrag);
     listen(svg, 'pointercancel', endDrag);
     listen(svg, 'click', event => {
-        if (event.target === svg && moved < 5) { selected = null; hint(null); schedule(); }
+        if (event.target === svg && moved < 5) { selected = null; send({action: 'select', path: null}); hint(null); schedule(); }
     });
     listen(svg, 'wheel', event => {
         event.preventDefault();
@@ -306,6 +314,7 @@
     observer.observe(document.getElementById('main'), { childList: true, subtree: true });
     window.dadoScene = {
         setGraph, dispose,
+        selectPath: path => { selected = path; schedule(); },
         reset: () => { animateCamera(initialCamera(), 450); hint(null); },
         cancelNavigation: () => { navigationPending = false; wheel = 0; hint('Folder is no longer available', 1400); },
     };

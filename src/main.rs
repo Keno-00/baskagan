@@ -4,13 +4,21 @@ use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 
 mod constellation;
+mod terminal;
 mod tree;
+mod workbench;
 use constellation::Constellation;
 
 #[derive(Clone, Copy)]
 pub struct Status {
     pub hint: Signal<Option<String>>,
     pub path: Signal<String>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Workbench {
+    pub shown: Signal<bool>,
+    pub selected_file: Signal<Option<std::path::PathBuf>>,
 }
 
 fn open_folder(mut project: Signal<Option<std::path::PathBuf>>, mut creating: Signal<bool>) {
@@ -61,6 +69,10 @@ fn App() -> Element {
         hint: Signal::new(None),
         path: Signal::new(String::new()),
     });
+    let mut workbench = use_context_provider(|| Workbench {
+        shown: Signal::new(false),
+        selected_file: Signal::new(None),
+    });
     use_effect(move || {
         status.path.set(
             project
@@ -70,10 +82,12 @@ fn App() -> Element {
                 .unwrap_or_default(),
         );
         status.hint.set(None);
+        workbench.selected_file.set(None);
     });
 
     rsx! {
         style { {include_str!("style.css")} }
+        style { {include_str!("../assets/workbench.css")} }
         header { class: "menu-bar",
             button { class: "menu-trigger", aria_expanded: "{menu}",
                 onmouseenter: move |_| status.hint.set(Some("Project actions".into())),
@@ -96,6 +110,7 @@ fn App() -> Element {
                 }
             }
         }
+        div { class: if (workbench.shown)() { "workspace panel-open" } else { "workspace" },
         main {
             if creating() {
                 form { class: "create-form",
@@ -163,6 +178,8 @@ fn App() -> Element {
                     }
                 }
             }
+        }
+        workbench::SidePanel { root: project() }
         }
         footer { class: "status-bar", role: "status",
             "{status.hint.read().as_deref().unwrap_or(&status.path.read())}"

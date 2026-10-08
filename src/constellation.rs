@@ -1,4 +1,4 @@
-use crate::{Status, tree::Tree};
+use crate::{Status, Workbench, tree::Tree};
 use dioxus::prelude::*;
 use notify::{RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,7 @@ struct Interaction {
     action: String,
     path: Option<PathBuf>,
     text: Option<String>,
+    directory: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -33,6 +34,7 @@ pub fn Constellation(root: PathBuf) -> Element {
     let mut revision = use_signal(|| 0u64);
     let mut ready = use_signal(|| false);
     let mut status = use_context::<Status>();
+    let mut workbench = use_context::<Workbench>();
     let watch_root = root.clone();
     use_future(move || {
         let root = watch_root.clone();
@@ -100,12 +102,33 @@ pub fn Constellation(root: PathBuf) -> Element {
                 match message.action.as_str() {
                     "ready" => ready.set(true),
                     "hint" => status.hint.set(message.text),
+                    "select" => {
+                        workbench
+                            .selected_file
+                            .set(if message.directory == Some(false) {
+                                message.path
+                            } else {
+                                None
+                            });
+                    }
+                    "open_file" => {
+                        if let Some(path) = message.path.filter(|p| p.is_file()) {
+                            workbench.selected_file.set(Some(path.clone()));
+                            workbench.shown.set(true);
+                            if let Ok(json) = serde_json::to_string(&path) {
+                                let _ = document::eval(&format!(
+                                    "window.dadoWorkbench?.openFile({json});"
+                                ));
+                            }
+                        }
+                    }
                     "enter" => {
                         if let Some(path) = message
                             .path
                             .filter(|p| p.starts_with(&root) && p.is_dir() && !p.is_symlink())
                         {
                             folder.set(path);
+                            workbench.selected_file.set(None);
                             overview.set(false);
                             status.hint.set(None);
                         } else {
@@ -170,6 +193,18 @@ pub fn Constellation(root: PathBuf) -> Element {
                     onclick: move |_| { let _ = document::eval("window.dadoScene?.reset();"); },
                     svg { view_box: "0 0 24 24", "aria-hidden": "true",
                         path { d: "M5 9a7 7 0 1 1-1 6M5 4v5h5" }
+                    }
+                }
+                span { class: "control-divider", aria_hidden: "true" }
+                button { class: if (workbench.shown)() { "icon-button selected" } else { "icon-button" },
+                    aria_label: "Toggle side panel", aria_pressed: "{workbench.shown}",
+                    onmouseenter: move |_| status.hint.set(Some("Show or hide editor and terminal tabs".into())),
+                    onmouseleave: move |_| status.hint.set(None),
+                    onfocus: move |_| status.hint.set(Some("Show or hide editor and terminal tabs".into())),
+                    onblur: move |_| status.hint.set(None), onclick: move |_| workbench.shown.toggle(),
+                    svg { view_box: "0 0 24 24", "aria-hidden": "true",
+                        rect { x: "4", y: "5", width: "16", height: "14", rx: "3" }
+                        path { d: "M14 5v14" }
                     }
                 }
             }
