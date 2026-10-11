@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const {slashQuery,search,move}=require('../ui/commands.js');
+assert.deepEqual(slashQuery('/fi',3),{from:0,to:3,query:'fi'});
+assert.deepEqual(slashQuery('Explain\n/model',14),{from:8,to:14,query:'model'});
+for(const text of ['https://example.test','C:/Users/Admin','/home/user','some /file','\\/file','```rust\n/file'])assert.equal(slashQuery(text,text.length),null,text);
+assert.equal(slashQuery('```\ncode\n```\n/file',18)?.query,'file');
+const catalog=[{id:'settings',alias:'model-settings',label:'Model Settings',keywords:'configure'},{id:'model',alias:'model',label:'Models',keywords:'reasoning'}];
+assert.equal(search(catalog,'model')[0].id,'model');
+assert.deepEqual(search(catalog,'no match'),[]);
+assert.equal(search(catalog,'reasoning')[0].id,'model');
+assert.equal(move(0,3,'ArrowUp'),2);assert.equal(move(2,3,'ArrowDown'),0);assert.equal(move(1,3,'Home'),0);assert.equal(move(0,3,'End'),2);assert.equal(move(0,0,'ArrowDown'),-1);
+console.log('Command query, path exclusions, ranking, and selection tests passed.');

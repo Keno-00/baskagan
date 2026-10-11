@@ -37,6 +37,7 @@ const docsScene = {
     assert.equal(await docs.getAttribute('aria-pressed'), 'true');
     const file = page.locator('g[aria-label="README.md"]');
     await file.click();
+    await page.waitForFunction(() => document.querySelector('g[aria-label="README.md"]')?.getAttribute('aria-pressed') === 'true');
     assert.equal(await file.getAttribute('aria-pressed'), 'true', 'file nodes must be selectable');
     await file.dblclick();
     assert.equal(await page.evaluate(() => messages.filter(m => m.action === 'open_file').at(-1).path), root + '\\README.md');
@@ -45,6 +46,14 @@ const docsScene = {
     await page.evaluate(graph => dadoScene.setGraph(graph), docsScene);
     await page.waitForTimeout(720);
     assert.ok(await page.locator('g[aria-label="docs"]').isVisible(), 'new central folder must remain visible');
+    await page.evaluate(() => dadoScene.goHistory(-1));
+    assert.equal(await page.evaluate(() => messages.filter(m => m.action === 'enter').at(-1).path), root, 'back must navigate to previous folder');
+    await page.evaluate(graph => dadoScene.setGraph(graph), rootScene);
+    await page.waitForTimeout(720);
+    await page.evaluate(() => dadoScene.goHistory(1));
+    assert.equal(await page.evaluate(() => messages.filter(m => m.action === 'enter').at(-1).path), root + '\\docs', 'forward must restore folder');
+    await page.evaluate(graph => dadoScene.setGraph(graph), docsScene);
+    await page.waitForTimeout(720);
     await page.mouse.move(600, 400);
     await page.mouse.wheel(0, 120);
     assert.equal(await page.evaluate(() => messages.filter(m => m.action === 'enter').at(-1).path), root, 'scroll down must go to parent');

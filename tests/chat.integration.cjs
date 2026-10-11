@@ -1,0 +1,64 @@
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+(async () => {
+    const browser = await chromium.launch({ headless: true, channel: process.env.DADO_TEST_BROWSER || undefined });
+    try {
+        const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        await page.setContent(`<style>${fs.readFileSync('src/style.css', 'utf8')}</style><div id="main"><header class="menu-bar">File</header><div class="workspace"><div id="systems-chat" class="systems-chat"><main><span>Systems view</span></main><section id="chat-host"></section></div><aside class="side-panel"></aside></div><footer class="status-bar"></footer></div>`);
+        await page.addScriptTag({path: 'ui/annotations.js'});
+        await page.addScriptTag({path: 'ui/chat.js'});
+        await page.evaluate(() => { window.requests = []; startChat(message => { requests.push(message); if (message.action === 'attach') queueMicrotask(() => dadoChat.attach([{path:'C:\\project\\main.rs', name:'main.rs', size:123}])); }); });
+        const input = page.getByRole('textbox', {name:'Message', exact:true});
+        const height = async selector => page.locator(selector).evaluate(el => el.getBoundingClientRect().height);
+        const originalHeight = await height('main');
+        await input.fill(Array.from({length:80}, (_, i) => `Line ${i}`).join('\n'));
+        await page.waitForTimeout(100);
+        assert.equal(await height('main'), originalHeight, 'draft must not reduce systems area');
+        assert.ok(await height('.chat-composer') <= await height('#chat-host') / 2 + 1, 'composer stays within half chat height');
+        assert.ok(await input.evaluate(el => el.scrollHeight > el.clientHeight), 'long draft scrolls');
+        await input.fill('First local message'); await input.press('Enter');
+        assert.equal(await page.locator('.chat-user-message').count(), 1);
+        assert.equal(await input.inputValue(), '');
+        await input.fill('<script>literal text</script>'); await input.press('Shift+Enter');
+        assert.equal(await page.locator('.chat-user-message').count(), 1, 'Shift+Enter must leave the message as a draft');
+        assert.equal(await input.inputValue(), '<script>literal text</script>\n');
+        await input.press('a'); await input.press('Enter');
+        assert.ok((await page.locator('.chat-message-text').last().innerText()).includes('<script>literal text</script>\na'));
+        await page.getByRole('button', {name:'Attach files', exact:true}).click();
+        await page.getByRole('button', {name:'Remove main.rs'}).waitFor();
+        await page.getByRole('button', {name:'Remove main.rs'}).click();
+        assert.ok(await page.getByRole('button', {name:'Send message', exact:true}).isDisabled());
+        await page.getByRole('button', {name:'Attach files', exact:true}).click();
+        await page.getByRole('button', {name:'Remove main.rs'}).waitFor();
+        await page.getByRole('button', {name:'Send message', exact:true}).click();
+        assert.equal(await page.locator('.chat-user-message').count(), 3);
+        assert.equal(await page.locator('.chat-message-files').innerText(), 'main.rs');
+        const choose = async label => { await page.locator('.chat-divider').hover(); await page.getByRole('button',{name:'Change chat layout',exact:true}).click(); await page.getByRole('button',{name:label,exact:true}).click(); await page.waitForTimeout(50); };
+        await choose('Balanced layout');
+        assert.ok(Math.abs(await height('main') - await height('#chat-host')) <= 1);
+        await choose('Chat larger');
+        assert.ok(Math.abs(await height('#chat-host') / await height('main') - 3) < 0.01);
+        await input.fill('A draft stays here');
+        await page.evaluate(() => document.querySelector('.workspace').classList.add('panel-open'));
+        await choose('Systems larger');
+        assert.ok(Math.abs(await height('main') / await height('#chat-host') - 3) < 0.01);
+        assert.equal(await input.inputValue(), 'A draft stays here');
+        assert.equal(await page.locator('.chat-user-message').count(), 3);
+        assert.ok(await page.locator('.chat-history').evaluate(el => getComputedStyle(el).maskImage.includes('linear-gradient')));
+        await input.fill('');
+        await page.locator('.chat-dots').hover();
+        const alignment = await page.locator('.chat-dots').evaluate(button => {
+            const box = button.getBoundingClientRect(), icon = button.querySelector('svg').getBoundingClientRect();
+            return {x: box.x + box.width / 2 - icon.x - icon.width / 2, y: box.y + box.height / 2 - icon.y - icon.height / 2, width: box.width, height: box.height};
+        });
+        assert.ok(Math.abs(alignment.x) < 0.5 && Math.abs(alignment.y) < 0.5, 'dots icon must be centered inside its hover pill');
+        assert.ok(alignment.width > alignment.height, 'hover background should be pill shaped');
+        await page.screenshot({path:'target/chat-preview.png'});
+        assert.deepEqual(errors, []);
+        console.log('Chat integration passed');
+    } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

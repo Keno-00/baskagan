@@ -3,8 +3,16 @@
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 
+mod agent;
+mod ai;
+mod ai_process;
+mod chat;
 mod constellation;
+mod model_selector;
+mod permission_selector;
+mod project_store;
 mod terminal;
+mod titlebar;
 mod tree;
 mod workbench;
 use constellation::Constellation;
@@ -39,7 +47,8 @@ fn main() {
         .with_cfg(
             Config::new().with_menu(None).with_window(
                 WindowBuilder::new()
-                    .with_title("DADO IDE")
+                    .with_title("ᜊᜐ᜔ᜃᜄᜈ᜔")
+                    .with_decorations(false)
                     .with_inner_size(LogicalSize::new(1200.0, 800.0)),
             ),
         )
@@ -64,7 +73,6 @@ fn App() -> Element {
     let mut creating = use_signal(|| false);
     let mut name = use_signal(String::new);
     let mut error = use_signal(String::new);
-    let mut menu = use_signal(|| false);
     let mut status = use_context_provider(|| Status {
         hint: Signal::new(None),
         path: Signal::new(String::new()),
@@ -88,29 +96,11 @@ fn App() -> Element {
     rsx! {
         style { {include_str!("style.css")} }
         style { {include_str!("../assets/workbench.css")} }
-        header { class: "menu-bar",
-            button { class: "menu-trigger", aria_expanded: "{menu}",
-                onmouseenter: move |_| status.hint.set(Some("Project actions".into())),
-                onmouseleave: move |_| status.hint.set(None),
-                onclick: move |_| menu.toggle(), "File"
-            }
-            if menu() {
-                div { class: "menu-dismiss", onclick: move |_| menu.set(false) }
-                div { class: "file-menu",
-                    button { onmouseenter: move |_| status.hint.set(Some("Create a new project folder".into())),
-                        onmouseleave: move |_| status.hint.set(None), onclick: move |_| {
-                        name.set(String::new()); error.set(String::new()); creating.set(true); menu.set(false);
-                    }, "New Project" }
-                    button { onmouseenter: move |_| status.hint.set(Some("Open or switch to an existing folder".into())),
-                        onmouseleave: move |_| status.hint.set(None), onclick: move |_| { menu.set(false); open_folder(project, creating); }, "Open Folder…" }
-                    button { onmouseenter: move |_| status.hint.set(Some("Close the current project".into())),
-                        onmouseleave: move |_| status.hint.set(None), disabled: project.read().is_none(), onclick: move |_| {
-                        project.set(None); creating.set(false); menu.set(false);
-                    }, "Close Project" }
-                }
-            }
-        }
+        titlebar::TitleBar { project, creating, name, error }
+        div { class: "app-body", "data-project": if project.read().is_some() { "open" } else { "closed" },
+        aside { id: "left-sidebar", hidden: true, aria_label: "Sidebar" }
         div { class: if (workbench.shown)() { "workspace panel-open" } else { "workspace" },
+        div { id: "systems-chat", class: "systems-chat",
         main {
             if creating() {
                 form { class: "create-form",
@@ -179,7 +169,11 @@ fn App() -> Element {
                 }
             }
         }
+        chat::ChatPanel { root: project() }
+        }
         workbench::SidePanel { root: project() }
+        }
+        section { id: "settings-host", hidden: true, aria_label: "Settings" }
         }
         footer { class: "status-bar", role: "status",
             "{status.hint.read().as_deref().unwrap_or(&status.path.read())}"

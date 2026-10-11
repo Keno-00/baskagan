@@ -1,6 +1,10 @@
 import { EditorView, basicSetup } from 'codemirror';
 import { keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
+import { Decoration, ViewPlugin } from '@codemirror/view';
+import { StateEffect, Compartment, EditorState } from '@codemirror/state';
+import './annotations.js';
+import './review.js';
+import { undo, redo, selectAll, deleteCharForward, indentWithTab } from '@codemirror/commands';
 import { rust } from '@codemirror/lang-rust';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
@@ -130,7 +134,7 @@ window.startWorkbench = send => {
         tab.body.append(chooser); return tab;
     }
     async function save(tab) {
-        if (!tab.view || !tab.path || tab.saving) return false;
+        if (!tab.view || !tab.path || tab.saving || tab.agentLocked) return false;
         tab.saving = true;
         const snapshot = tab.view.state.doc.toString();
         const text = (tab.bom ? '\ufeff' : '') + snapshot.replace(/\n/g, tab.newline);
@@ -143,6 +147,7 @@ window.startWorkbench = send => {
         finally { tab.saving = false; }
     }
     function closeTab(tab) {
+        if(tab.agentLocked) return;
         if (tab.dirty) {
             notices.replaceChildren();
             const row = element('div', 'unsaved-notice');
@@ -157,6 +162,7 @@ window.startWorkbench = send => {
     }
     function removeTab(tab) {
         tab.closed = true;
+        tab.commentCleanup?.();
         tab.view?.destroy(); tab.terminal?.dispose(); tab.terminalResize?.dispose();
         if (tab.type === 'terminal') rpc('terminal_close', { tab: tab.id }).catch(report);
         const index = tabs.indexOf(tab); tabs.splice(index, 1); tab.body.remove(); notices.replaceChildren();
@@ -178,6 +184,7 @@ window.startWorkbench = send => {
         tab.type = 'editor'; tab.title = 'Open file'; tab.body.replaceChildren();
         const toolbar = element('div', 'editor-toolbar');
         tab.caption = element('div', 'editor-caption', 'Open file');
+        tab.commentListRect = () => document.querySelector('.chat-composer')?.getBoundingClientRect() || tab.body.getBoundingClientRect();
         toolbar.append(tab.caption, button('editor', 'Open file', () => pick(tab)));
         tab.saveButton = button('save', 'Save file · Ctrl+S', () => save(tab)); tab.saveButton.disabled = true;
         toolbar.append(tab.saveButton, button('folder', 'Toggle file browser', () => {
@@ -193,6 +200,7 @@ window.startWorkbench = send => {
         if (path) loadFile(tab, path);
     }
     async function loadFile(tab, path) {
+        if(tab.agentLocked) return;
         tab.loading = true;
         try {
             const file = await rpc('read', { path });
@@ -204,22 +212,80 @@ window.startWorkbench = send => {
             tab.savedText = content; tab.dirty = false;
             tab.caption.textContent = tab.title; tab.saveButton.disabled = false;
             tab.view?.destroy(); tab.editorHost.replaceChildren();
+            tab.commentCleanup?.();
+            const refreshComments = StateEffect.define();
+            const annotations = window.dadoComments;
+            const commentPlugin = ViewPlugin.fromClass(class {
+                constructor(view) { this.decorations = this.build(view); }
+                build(view) {
+                    return Decoration.set(annotations.comments.filter(item => item.source === path && item.to > item.from && item.to <= view.state.doc.length)
+                        .map(item => Decoration.mark({class: 'comment-code-highlight', attributes: {'data-comment': String(item.id)}}).range(item.from, item.to)), true);
+                }
+                update(update) {
+                    if (update.docChanged) annotations.comments.filter(item => item.source === path).forEach(item => { item.from = update.changes.mapPos(item.from, 1); item.to = update.changes.mapPos(item.to, -1); if (item.to < item.from) item.to = item.from; });
+                    if (update.docChanged) queueMicrotask(() => annotations.changed());
+                    annotations.comments.filter(item => item.source === path).forEach(item => { item.lineFrom = update.state.doc.lineAt(Math.min(item.from, update.state.doc.length)).number; item.lineTo = update.state.doc.lineAt(Math.min(Math.max(item.from, item.to - 1), update.state.doc.length)).number; });
+                    this.decorations = this.build(update.view);
+                    requestAnimationFrame(() => tab.positionComment?.());
+                }
+            }, {decorations: plugin => plugin.decorations});
+            tab.agentLock = new Compartment();
             tab.view = new EditorView({
                 parent: tab.editorHost, doc: content,
-                extensions: [basicSetup, editorTheme, language(file.path), keymap.of([
+                extensions: [basicSetup, editorTheme, language(file.path), commentPlugin, tab.agentLock.of(EditorState.readOnly.of(false)), keymap.of([
                     { key: 'Mod-s', run: () => { save(tab); return true; } }, indentWithTab,
                 ]), EditorView.updateListener.of(update => {
                     if (update.docChanged) { tab.dirty = update.state.doc.toString() !== tab.savedText; renderTabs(); }
                     if (update.selectionSet) {
+                        requestAnimationFrame(() => tab.positionComment?.());
                         const head = update.state.selection.main.head;
                         const line = update.state.doc.lineAt(head);
                         hint(`${tab.path} · Ln ${line.number}, Col ${head - line.from + 1}`);
                     }
                 })],
             });
+            const rail = element('div', 'editor-comment-rail');
+            const counts = element('div', 'editor-line-counts'); rail.append(counts);
+            const commentButton = element('button', 'annotation-trigger editor-line-comment'); commentButton.type = 'button'; commentButton.setAttribute('aria-label', 'Comment on code'); commentButton.innerHTML = annotations.glyph; commentButton.hidden = true;
+            rail.append(commentButton); tab.editorHost.append(rail);
+            tab.positionComment = () => {
+                if (tab.closed || !tab.view) return;
+                const range = tab.view.state.selection.main;
+                const coords = tab.view.coordsAtPos(range.head);
+                const bounds = tab.editorHost.getBoundingClientRect();
+                commentButton.hidden = !coords || coords.top < bounds.top || coords.bottom > bounds.bottom;
+                if (coords) commentButton.style.top = `${Math.max(0, coords.top - bounds.top - 3)}px`;
+                counts.replaceChildren();
+                const grouped = new Map();
+                annotations.comments.filter(item => item.source === path).forEach(item => { const line = tab.view.state.doc.lineAt(Math.min(item.from, tab.view.state.doc.length)); if (!grouped.has(line.from)) grouped.set(line.from, []); grouped.get(line.from).push(item); });
+                grouped.forEach((items, pos) => {
+                    const location = tab.view.coordsAtPos(pos); if (!location || location.top < bounds.top || location.bottom > bounds.bottom) return;
+                    const ids = items.map(item => item.id).join(', ');
+                    const badge = element('button', 'editor-line-count comment-badge'); badge.type = 'button'; badge.innerHTML = annotations.glyph; badge.append(element('span', '', ids)); badge.setAttribute('aria-label', `View code comments ${ids}`);
+                    badge.style.top = `${location.top - bounds.top - 3}px`; badge.onclick = () => annotations.list(tab.commentListRect(), items); counts.append(badge);
+                });
+            };
+            commentButton.onpointerdown = event => event.preventDefault();
+            commentButton.onclick = () => {
+                const selection = tab.view.state.selection.main;
+                const line = tab.view.state.doc.lineAt(selection.head);
+                const from = selection.empty ? line.from : selection.from;
+                const to = selection.empty ? line.to : selection.to;
+                const quote = tab.view.state.doc.sliceString(from, to) || `Line ${line.number} (empty)`;
+                annotations.begin({quote, source: path, from, to, lineFrom: tab.view.state.doc.lineAt(from).number, lineTo: tab.view.state.doc.lineAt(Math.max(from, to - 1)).number}, commentButton.getBoundingClientRect());
+            };
+            const scroller = tab.view.scrollDOM;
+            scroller.addEventListener('scroll', tab.positionComment);
+            tab.view.dom.addEventListener('pointerup', tab.positionComment);
+            const unsubscribe = annotations.subscribe(() => {
+                if (tab.closed || !tab.view) return;
+                tab.view.dispatch({effects: refreshComments.of(null)});
+            });
+            tab.commentCleanup = () => { unsubscribe(); scroller.removeEventListener('scroll', tab.positionComment); };
             if (tab.id === active) { selectedFile = file.path; send({ action: 'selected', path: file.path }); }
             renderTabs(); if (tab.browser) renderExplorer(tab);
             requestAnimationFrame(() => { tab.view.requestMeasure(); if (tab.id === active && visible) tab.view.focus(); });
+            return tab;
         } catch (error) { report(error); }
         finally { tab.loading = false; }
     }
@@ -308,7 +374,93 @@ window.startWorkbench = send => {
         if (visible && tab?.browser && !tab.explorer.contains(document.activeElement)) renderExplorer(tab);
     }, 4000);
     window.dadoWorkbench = {
+        async refreshFromDisk(expectedRoot) {
+            const startRoot=root,{pathKey,normalizeText}=window.dadoReview;
+            if(!root || pathKey(root)!==pathKey(expectedRoot))return;
+            const prefix=pathKey(root).replace(/\/$/,'')+'/';
+            for(const tab of tabs.filter(tab=>tab.type==='editor' && tab.path && tab.view && pathKey(tab.path).startsWith(prefix))) {
+                if(tab.closed || tab.loading || tab.saving || tab.agentLocked)continue;
+                const view=tab.view,doc=view.state.doc,path=tab.path,original=tab.original;
+                try {
+                    const file=await rpc('read',{path});
+                    if(disposed || root!==startRoot || tab.closed || tab.path!==path || tab.view!==view || tab.loading || tab.saving || tab.agentLocked || view.state.doc!==doc || tab.original!==original)continue;
+                    if(file.text===tab.original)continue;
+                    if(tab.dirty) {hint('File changed on disk · Your unsaved editor text was preserved');continue;}
+                    const content=normalizeText(file.text),before=doc.toString();
+                    let from=0,suffix=0;
+                    while(from<before.length && from<content.length && before[from]===content[from])from++;
+                    while(suffix<before.length-from && suffix<content.length-from && before.at(-1-suffix)===content.at(-1-suffix))suffix++;
+                    tab.original=file.text;tab.savedText=content;tab.bom=file.text.startsWith('\ufeff');tab.newline=file.text.includes('\r\n')?'\r\n':'\n';
+                    if(before!==content)view.dispatch({changes:{from,to:before.length-suffix,insert:content.slice(from,content.length-suffix)}});
+                    tab.dirty=false;renderTabs();
+                } catch(error) {if(root===startRoot && !tab.closed)report(error);}
+            }
+        },
+        agentContext() {
+            return {selectedFile,buffers:tabs.filter(tab=>tab.type==='editor' && tab.path && tab.view && !tab.loading).map(tab=>({path:tab.path,text:(tab.bom?'\ufeff':'')+tab.view.state.doc.toString().replace(/\n/g,tab.newline),original:tab.original}))};
+        },
+        async applyProposal(review, expectedRoot) {
+            const {pathKey,normalizeText}=window.dadoReview;
+            const startRoot=root, locked=new Set(), targets=[];
+            const lock=tab=>{if(locked.has(tab))return;tab.agentLocked=true;tab.view.dispatch({effects:tab.agentLock.reconfigure(EditorState.readOnly.of(true))});locked.add(tab);};
+            const bufferText=tab=>(tab.bom?'\ufeff':'')+tab.view.state.doc.toString().replace(/\n/g,tab.newline);
+            try {
+                if(!root || pathKey(root)!==pathKey(expectedRoot)) throw new Error('Project changed before applying.');
+                if(review.state!=='pending' || !review.changes?.length) throw new Error('There are no pending file changes.');
+                const issue=window.dadoReview.applicationIssue(review);if(issue)throw new Error(issue);
+                for(const file of review.changes) {
+                    if(file.conflict) throw new Error(`${file.path} changed on disk. Resolve that conflict before applying.`);
+                    const open=tabs.filter(tab=>tab.path && pathKey(tab.path)===pathKey(file.absolutePath));
+                    for(const tab of open) {if(!tab.view || tab.loading || tab.saving || tab.agentLocked) throw new Error(`${file.path} is busy.`);lock(tab);}
+                    targets.push({file,open});
+                }
+                // Check every disk baseline before changing any editor. Never save here.
+                for(const {file,open} of targets) {
+                    const disk=await rpc('read',{path:file.absolutePath});
+                    if(disk.text!==file.diskBefore) throw new Error(`${file.path} changed on disk after review.`);
+                    if(!open.length) {
+                        const tab=createTab();createEditor(tab,null);
+                        if(!await loadFile(tab,file.absolutePath)) throw new Error(`Could not open ${file.path}.`);
+                        lock(tab);open.push(tab);
+                    }
+                    for(const tab of open) if(bufferText(tab)!==file.before || tab.original!==file.diskBefore) throw new Error(`${file.path} has editor changes outside this proposal. Your text was preserved.`);
+                }
+                if(root!==startRoot) throw new Error('Project changed before applying.');
+                for(const {file,open} of targets) for(const tab of open) {
+                    if(tab.closed || bufferText(tab)!==file.before) throw new Error(`${file.path} changed before applying.`);
+                }
+                for(const {file,open} of targets) for(const tab of open) tab.view.dispatch({changes:{from:0,to:tab.view.state.doc.length,insert:normalizeText(file.after)},userEvent:'input.agent'});
+                activate(targets[0].open[0]);
+                hint('Applied to editors · Save to write the files');
+            } finally {
+                for(const tab of locked) {tab.agentLocked=false;if(!tab.closed && tab.view) tab.view.dispatch({effects:tab.agentLock.reconfigure(EditorState.readOnly.of(false))});}
+            }
+        },
         openFile,
+        editCommand(command, target) {
+            const view = target?.closest?.('.cm-editor') && EditorView.findFromDOM(target.closest('.cm-editor'));
+            if (!view) return false;
+            view.focus();
+            const commands = { undo, redo, selectAll, delete: deleteCharForward };
+            if (commands[command]) { commands[command](view); return true; }
+            if (['cut', 'copy', 'paste'].includes(command)) {
+                const selection = view.state.selection.main;
+                const text = view.state.sliceDoc(selection.from, selection.to);
+                (async () => {
+                    try {
+                        if (command === 'paste') {
+                            const content = await navigator.clipboard.readText();
+                            view.dispatch(view.state.replaceSelection(content));
+                        } else if (!selection.empty) {
+                            await navigator.clipboard.writeText(text);
+                            if (command === 'cut') view.dispatch({changes: {from: selection.from, to: selection.to, insert: ''}, userEvent: 'delete.cut'});
+                        }
+                    } catch { hint('Clipboard unavailable. Use the keyboard shortcut.'); }
+                })();
+                return true;
+            }
+            return false;
+        },
         selectFile(path) {
             selectedFile = path;
             const tab = tabs.find(tab => tab.id === active);
@@ -316,6 +468,7 @@ window.startWorkbench = send => {
         },
         setRoot(path) { root = path; const tab = tabs.find(tab => tab.id === active); if (tab?.browser) renderExplorer(tab); },
         setVisible(shown) {
+            if (shown !== visible) document.dispatchEvent(new CustomEvent('dado-settings-change',{detail:{rightPanel:shown}}));
             visible = shown; host.setAttribute('aria-hidden', String(!shown));
             if (shown && tabs.length === 0) newChoice();
             requestAnimationFrame(() => { const tab = tabs.find(tab => tab.id === active); tab?.view?.requestMeasure(); fitTerminal(tab); });
@@ -331,7 +484,7 @@ window.startWorkbench = send => {
         dispose() {
             if (disposed) return; disposed = true;
             resize.disconnect(); clearInterval(refreshBrowser); if (hintTimer) clearTimeout(hintTimer);
-            for (const tab of tabs) { tab.view?.destroy(); tab.terminal?.dispose(); }
+            for (const tab of tabs) { tab.closed = true; tab.commentCleanup?.(); tab.view?.destroy(); tab.terminal?.dispose(); }
             host.replaceChildren();
         },
     };

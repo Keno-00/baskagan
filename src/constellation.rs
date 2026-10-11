@@ -41,11 +41,16 @@ pub fn Constellation(root: PathBuf) -> Element {
         async move {
             let dirty = Arc::new(AtomicBool::new(false));
             let changed = dirty.clone();
+            let storage = root.join(".dado");
             let mut watcher =
                 notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
                     if event
                         .as_ref()
-                        .map(|e| !matches!(e.kind, notify::EventKind::Access(_)))
+                        .map(|e| {
+                            !matches!(e.kind, notify::EventKind::Access(_))
+                                && (e.paths.is_empty()
+                                    || e.paths.iter().any(|path| !path.starts_with(&storage)))
+                        })
                         .unwrap_or(true)
                     {
                         changed.store(true, Ordering::Relaxed);

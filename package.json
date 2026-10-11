@@ -1,9 +1,9 @@
 {
-  "name": "dado-ide-ui",
+  "name": "dado-sde-ui",
   "private": true,
   "scripts": {
     "build": "esbuild ui/workbench.js --bundle --format=iife --target=chrome110 --outfile=assets/workbench.js --minify",
-    "test": "node tests/scene.test.cjs && node tests/scene.integration.cjs && node tests/workbench.integration.cjs"
+    "test": "node tests/titlebar.integration.cjs && node tests/scene.test.cjs && node tests/scene.integration.cjs && node tests/workbench.integration.cjs && node tests/chat.integration.cjs && node tests/comments.integration.cjs"
   },
   "dependencies": {
     "codemirror": "^6",

@@ -16,6 +16,7 @@
     };
     const initialCamera = () => ({ yaw: 0, zoom: 1, panX: 0, panY: 0 });
     let camera = initialCamera(), target = initialCamera(), cameraTween = null;
+    let visits = [], visitIndex = -1, historyTarget = null;
     let scene = null, selected = null, transition = null, screen = new Map();
     let dragging = null, moved = 0, wheel = 0, wheelTime = 0, navigationPending = false, blockedUntil = 0;
     let frame = null, disposed = false, fit = 1, childParents = new Set(), scenePaths = new Set();
@@ -219,6 +220,10 @@
         if (transition || cameraTween) schedule();
     }
     function setGraph(next) {
+        if (historyTarget !== null && visits[historyTarget] === next.current) { visitIndex = historyTarget; }
+        else if (visits[visitIndex] !== next.current) { visits.splice(visitIndex + 1); visits.push(next.current); visitIndex = visits.length - 1; }
+        historyTarget = null;
+        window.dadoTitlebar?.navigation(visitIndex > 0, visitIndex < visits.length - 1);
         if (scene && next.current === scene.current && next.overview === scene.overview
             && JSON.stringify(next.tree) === JSON.stringify(scene.tree)) { navigationPending = false; return; }
         const previous = scene;
@@ -308,15 +313,21 @@
         if (hintTimer !== null) clearTimeout(hintTimer);
         if (frame !== null) cancelAnimationFrame(frame);
         observer.disconnect();
+        window.dadoTitlebar?.navigation(false, false);
         if (window.dadoScene?.dispose === dispose) delete window.dadoScene;
     }
     const observer = new MutationObserver(() => { if (!svg.isConnected) dispose(); });
     observer.observe(document.getElementById('main'), { childList: true, subtree: true });
     window.dadoScene = {
         setGraph, dispose,
+        goHistory(direction) {
+            const index = visitIndex + direction;
+            if (index < 0 || index >= visits.length || navigationPending || performance.now() < blockedUntil) return;
+            historyTarget = index; navigate(visits[index]);
+        },
         selectPath: path => { selected = path; schedule(); },
         reset: () => { animateCamera(initialCamera(), 450); hint(null); },
-        cancelNavigation: () => { navigationPending = false; wheel = 0; hint('Folder is no longer available', 1400); },
+        cancelNavigation: () => { historyTarget = null; navigationPending = false; wheel = 0; hint('Folder is no longer available', 1400); },
     };
     send({ action: 'ready' });
 })();
