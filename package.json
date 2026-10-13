@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "esbuild ui/workbench.js --bundle --format=iife --target=chrome110 --outfile=assets/workbench.js --minify",
-    "test": "node tests/titlebar.integration.cjs && node tests/scene.test.cjs && node tests/scene.integration.cjs && node tests/workbench.integration.cjs && node tests/chat.integration.cjs && node tests/comments.integration.cjs"
+    "test": "node tests/atmosphere.test.cjs && node tests/titlebar.integration.cjs && node tests/scene.test.cjs && node tests/camera_zoom.integration.cjs && node tests/navigation.integration.cjs && node tests/scene.integration.cjs && node tests/systems.integration.cjs && node tests/project_model.integration.cjs && node tests/understanding.integration.cjs && node tests/node_hold.integration.cjs && node tests/motion.integration.cjs && node tests/attachments.integration.cjs && node tests/workbench.integration.cjs && node tests/chat.integration.cjs && node tests/history.integration.cjs && node tests/comments.integration.cjs && node tests/settings.integration.cjs && node tests/model_settings.integration.cjs && node tests/markdown.integration.cjs"
   },
   "dependencies": {
     "codemirror": "^6",

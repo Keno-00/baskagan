@@ -1,0 +1,42 @@
+:root {
+    font-family: var(--ui-font);
+    color-scheme: light;
+    color: var(--ui-on-primary);
+    background: var(--ui-primary);
+}
+
+:root[data-theme=dark] {
+    color-scheme: dark;
+    color: var(--ui-on-primary);
+    background: var(--ui-primary);
+    --ui-theme-primary-lightness: 13%;
+    --ui-theme-secondary-lightness: 17%;
+    --ui-theme-accent-lightness: 62%;
+    --ui-theme-on-primary-lightness: 90%;
+    --ui-theme-on-secondary-lightness: 90%;
+    --ui-theme-on-accent-lightness: 13%;
+    --ui-theme-primary-content-lightness: 15%;
+    --ui-theme-primary-control-lightness: 17%;
+    --ui-theme-primary-hover-lightness: 16%;
+    --ui-theme-primary-selected-lightness: 18%;
+    --ui-theme-accent-hover-lightness: 58%;
+    --ui-theme-panel-content-delta: -1%;
+    --ui-theme-panel-control-delta: 1%;
+    --ui-theme-panel-hover-delta: 2%;
+    --ui-theme-panel-selected-delta: 3%;
+    --ui-theme-diff-surface-lightness: 30%;
+    --ui-theme-muted-lightness: 68%;
+    --ui-theme-panel-muted-lightness: 70%;
+    --ui-theme-scene-ink-lightness: 82%;
+    --ui-danger-lightness: 70%;
+    --ui-warning-lightness: 68%;
+    --ui-success-lightness: 70%;
+    --ui-foreground: var(--ui-on-primary);
+    --ui-hover: var(--ui-primary-hover);
+    --ui-focus: var(--ui-accent);
+}
+
+.chat-assistant-bubble {font-size:calc(var(--ui-text) + 1px);}
+.chat-user-bubble {font-size:calc(var(--ui-text) + 2px);}
+.chat-composer textarea,.chat-file,.account-name,.sidebar-heading {font-size:var(--ui-text);font-family:var(--ui-font);}
+:root[data-reduced-motion=true] *, :root[data-reduced-motion=true] *::before,:root[data-reduced-motion=true] *::after {animation:none !important;transition:none !important;scroll-behavior:auto !important;}

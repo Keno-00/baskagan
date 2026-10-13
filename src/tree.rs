@@ -27,7 +27,13 @@ impl Tree {
                 .push("This folder is no longer available.".into());
         }
         let mut cursor = 0.0;
-        tree.layout(0, 0, &mut cursor);
+        let mut children = vec![Vec::new(); tree.nodes.len()];
+        for (i, n) in tree.nodes.iter().enumerate() {
+            if let Some(parent) = n.parent {
+                children[parent].push(i);
+            }
+        }
+        tree.layout(0, 0, &mut cursor, &children);
         let center = tree.nodes[0].position[0];
         let width = cursor.max(1.0);
         for node in &mut tree.nodes {
@@ -105,17 +111,26 @@ impl Tree {
                 ));
                 break;
             }
+            if overview
+                && child.file_name().is_some_and(|n| {
+                    [".git", ".dado", "node_modules", "target"]
+                        .contains(&n.to_string_lossy().as_ref())
+                })
+            {
+                continue;
+            }
             self.visit(&child, Some(index), depth + 1, overview);
         }
     }
 
-    fn layout(&mut self, index: usize, depth: usize, cursor: &mut f64) -> f64 {
-        let children: Vec<_> = self
-            .nodes
-            .iter()
-            .enumerate()
-            .filter_map(|(i, n)| (n.parent == Some(index)).then_some(i))
-            .collect();
+    fn layout(
+        &mut self,
+        index: usize,
+        depth: usize,
+        cursor: &mut f64,
+        descendants: &[Vec<usize>],
+    ) -> f64 {
+        let children = descendants[index].clone();
         let x = if children.is_empty() {
             let x = *cursor;
             *cursor += 1.0;
@@ -123,7 +138,7 @@ impl Tree {
         } else {
             let positions: Vec<_> = children
                 .into_iter()
-                .map(|i| self.layout(i, depth + 1, cursor))
+                .map(|i| self.layout(i, depth + 1, cursor, descendants))
                 .collect();
             (positions[0] + positions[positions.len() - 1]) / 2.0
         };

@@ -1,0 +1,66 @@
+.chat-agent-actions {display:flex;align-items:center;gap:4px;min-height:0;}
+.chat-agent-actions:empty {display:none;}
+.chat-agent-actions .chat-response-state {padding:4px 0;font-size:var(--ui-text-small);}
+.chat-review-changes,.chat-compact-action,.chat-review-close {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:var(--ui-control);padding:5px 8px;border-radius:var(--ui-radius);font:var(--ui-text) var(--ui-font);background:var(--ui-primary-control);color:var(--ui-on-primary);}
+.chat-review-changes svg,.chat-compact-action svg,.chat-review-close svg,.chat-tool-activity svg,.command-approval-heading svg,.change-review-name svg,.chat-message-files svg {width:var(--ui-icon);height:var(--ui-icon);fill:none;stroke:currentColor;stroke-width:1.5;flex-shrink:0;}
+.chat-review-changes:hover,.chat-compact-action:hover,.chat-review-close:hover {background:var(--ui-primary-hover);}
+#chat-host button:focus-visible,.chat-tool-activity summary:focus-visible,.review-file summary:focus-visible {outline:2px solid var(--ui-focus);outline-offset:-2px;}
+.chat-tool-activity {padding:0;border-radius:var(--ui-radius);font-size:var(--ui-text);color:var(--ui-foreground);}
+.chat-tool-activity summary {display:flex;align-items:center;gap:8px;padding:6px 8px;min-height:30px;border-radius:var(--ui-radius);list-style:none;}
+.chat-tool-activity summary::-webkit-details-marker,.review-file summary::-webkit-details-marker {display:none;}
+.chat-tool-activity > summary {width:fit-content;}
+.chat-tool-activity summary:hover {background:var(--ui-hover);}
+.chat-tool-activity > summary svg:last-child {width:12px;height:12px;}
+.chat-tool-activity[open] > summary svg:last-child {transform:rotate(90deg);}
+.activity-count,.tool-status {color:var(--ui-muted);font-size:var(--ui-text-small);}
+.tool-status {margin-left:auto;}
+.activity-tools {margin:4px 0 0;padding:4px;border-radius:12px;background:var(--ui-panel-base);color:var(--ui-panel-foreground);max-height:240px;overflow:auto;}
+.chat-tool-activity pre {margin:0 4px 4px;padding:8px;background:var(--ui-panel-content);color:var(--ui-panel-foreground);max-height:160px;font:11px/1.5 Consolas,monospace;}
+.chat-command-approval {margin:8px 0;padding:10px 12px;}
+.command-approval-heading {display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:500;}
+.command-approval-reason,.command-approval-scope {font-size:var(--ui-text-small);color:var(--ui-muted);}
+.command-approval-actions {display:flex;justify-content:flex-end;gap:4px;margin-top:8px;}
+.chat-change-review {padding:12px;font-size:var(--ui-text);}
+.chat-change-review[open] {gap:8px;}
+.chat-change-review header {gap:8px;}
+.review-count {color:var(--ui-muted);margin-right:auto;}
+.chat-change-review header .chat-review-close {width:30px;height:30px;padding:0;}
+.review-file {margin-bottom:8px;border-radius:var(--ui-radius);background:var(--ui-panel-control);color:var(--ui-panel-foreground);overflow:hidden;}
+.review-file .change-review-name {display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;font-weight:400;list-style:none;}
+.review-path {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
+.review-line-count {white-space:nowrap;color:var(--ui-muted);font-size:var(--ui-text-small);}
+.review-file .change-review-diff {margin:0;border-radius:0;max-height:300px;overflow:auto;}
+.chat-change-review footer .chat-compact-action {display:inline-flex;gap:6px;padding:6px 10px;background:var(--ui-accent);color:var(--ui-on-accent);}
+.review-issue {font-size:var(--ui-text-small);color:var(--ui-muted);}
+.chat-message-files .chat-file {display:inline-flex;align-items:center;gap:4px;max-width:200px;}
+.chat-message-files .chat-file > span {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+.chat-dots svg {fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;margin:auto;}
+
+.chat-inline-review {margin:8px 0;padding:10px;border-radius:12px;background:var(--ui-panel-base);color:var(--ui-panel-foreground);font-size:var(--ui-text);}
+.chat-inline-review header {display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.chat-inline-review header .chat-review-close {width:30px;height:30px;padding:0;}
+.chat-inline-review .change-review-files {max-height:300px;overflow:auto;}
+.chat-inline-review footer:empty {display:none;}
+.chat-agent-actions .chat-review-changes {margin:0;}
+
+.chat-markdown {white-space:normal;line-height:1.6;}
+.chat-markdown p {margin:0 0 12px;}
+.chat-markdown > :last-child {margin-bottom:0;}
+.chat-markdown h1,.chat-markdown h2,.chat-markdown h3,.chat-markdown h4,.chat-markdown h5,.chat-markdown h6 {margin:18px 0 8px;line-height:1.35;font-weight:600;}
+.chat-markdown > :first-child {margin-top:0;}
+.chat-markdown h1 {font-size:1.4em;}.chat-markdown h2 {font-size:1.25em;}.chat-markdown h3 {font-size:1.1em;}
+.chat-markdown ul,.chat-markdown ol {margin:8px 0 12px;padding-left:24px;}
+.chat-markdown li {margin:4px 0;}.chat-markdown li p {margin:4px 0;}
+.chat-markdown code {font: .95em/1.5 Consolas,monospace;background:var(--ui-primary-control);padding:2px 4px;border-radius:4px;}
+.chat-markdown pre {margin:12px 0;padding:12px;border-radius:12px;background:var(--ui-primary-control);overflow:auto;white-space:pre;}
+.chat-markdown pre code {padding:0;background:transparent;}
+.chat-markdown blockquote {margin:12px 0;padding:8px 12px;border-radius:8px;background:var(--ui-primary-control);color:var(--ui-on-primary);}
+.chat-markdown blockquote > :last-child {margin-bottom:0;}
+.chat-markdown a {color:inherit;text-decoration:underline;text-underline-offset:3px;}
+.chat-markdown a:focus-visible {outline:2px solid var(--ui-focus);outline-offset:2px;}
+.markdown-table {max-width:100%;overflow:auto;margin:12px 0;}
+.chat-markdown table {border-collapse:collapse;min-width:50%;font-size:var(--ui-text);}
+.chat-markdown td {padding:6px 10px;text-align:left;border-bottom:1px solid var(--ui-primary-hover);}
+.chat-markdown thead {background:var(--ui-primary-control);font-weight:600;}
+.chat-markdown hr {border:0;height:1px;background:var(--ui-primary-hover);margin:16px 0;}

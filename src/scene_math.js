@@ -2,6 +2,24 @@
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
     const ease = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
     const mix = (a, b, t) => a + (b - a) * t;
+    // Exact critically damped spring: preserves momentum without bounce or frame-rate dependence.
+    function springStep(value, velocity, destination, seconds, frequency = 11) {
+        const offset = value - destination, impulse = velocity + frequency * offset;
+        const decay = Math.exp(-frequency * seconds);
+        return {value: destination + (offset + impulse * seconds) * decay,
+            velocity: (velocity - frequency * impulse * seconds) * decay};
+    }
+    function railPoint(point, from, to, scale, progress) {
+        const zoom = mix(1, scale, progress);
+        return {x: mix(from.x, to.x, progress) + (point.x-from.x)*zoom,
+            y: mix(from.y, to.y, progress) + (point.y-from.y)*zoom};
+    }
+    function zoomAt(camera, point, zoom) {
+        zoom = clamp(zoom, .15, 8);
+        const ratio = zoom / camera.zoom;
+        return {...camera, zoom, panX: point.x-(point.x-camera.panX)*ratio,
+            panY: point.y+130-(point.y+130-camera.panY)*ratio};
+    }
     function project(position, camera, fit) {
         const [x, y, z] = position;
         const depth = x * Math.sin(camera.yaw) + z * Math.cos(camera.yaw);
@@ -27,5 +45,5 @@
             return !best || distance < best.distance ? { node, distance } : best;
         }, null)?.node ?? null;
     }
-    globalThis.DadoMath = { clamp, ease, mix, project, visible, edgeVisible, pickAnchor };
+    globalThis.DadoMath = { clamp, ease, mix, springStep, railPoint, zoomAt, project, visible, edgeVisible, pickAnchor };
 })();

@@ -1,25 +1,22 @@
-const {chromium} = require('playwright');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const path = require('node:path');
+const {nativeApp} = require('./native_app.cjs');
 (async () => {
-    const browser = await chromium.launch({headless:true, channel:process.env.DADO_TEST_BROWSER || undefined});
+    const app = await nativeApp();
+    const {page, project, errors} = app;
     try {
-        const page = await browser.newPage({viewport:{width:1200,height:800}});
-        const errors = []; page.on('pageerror', error => errors.push(error.message));
-        await page.setContent(`<style>${fs.readFileSync('src/style.css','utf8')}${fs.readFileSync('assets/workbench.css','utf8')}</style><div id="main"><header class="menu-bar">File</header><div class="workspace panel-open"><div id="systems-chat" class="systems-chat" style="grid-template-rows:1fr 1fr"><main>Systems</main><section id="chat-host"></section></div><aside class="side-panel"><div id="workbench-host"></div></aside></div></div>`);
-        await page.addScriptTag({path:'assets/workbench.js'}); await page.addScriptTag({path:'ui/chat.js'});
-        await page.evaluate(() => {
-            startChat(() => {});
-            startWorkbench(message => { let result; if (message.action === 'read') result = {path:message.path,text:'fn main() {\n    println!("hello");\n}\n'}; if (message.id) queueMicrotask(() => dadoWorkbench.reply({id:message.id,result})); });
-            dadoWorkbench.setVisible(true); dadoWorkbench.openFile('C:\\project\\main.rs');
-        });
-        const input = page.getByRole('textbox',{name:'Message',exact:true});
-        await input.fill('Please review this important sentence.'); await input.press('Enter');
-        await page.locator('.chat-message-text').evaluate(el => { const range = document.createRange(); range.setStart(el.firstChild,19); range.setEnd(el.firstChild,28); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true})); });
+        await page.evaluate(file => dadoWorkbench.openFile(file), path.join(project, 'main.rs'));
+        await page.locator('.cm-content').waitFor();
+        await page.evaluate(() => dadoChat.setConversation(dadoChat.snapshot().id, {messages: [{
+            id: 'comment-test-message', role: 'user', text: 'Please review this important sentence.',
+            time: new Date().toISOString(), attachments: [],
+        }]}));
+        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+        await page.locator('.chat-message-text').evaluate(el => { const range = document.createRange(); const text=document.createTreeWalker(el,NodeFilter.SHOW_TEXT).nextNode(); range.setStart(text,19); range.setEnd(text,28); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true})); });
         await page.getByRole('button',{name:'Comment on selected text'}).click();
         await page.getByRole('textbox',{name:'Comment text'}).fill('Keep this point'); await page.getByRole('button',{name:'Save',exact:true}).click();
         assert.equal(await page.locator('.comment-highlight').innerText(),'important');
-        await page.locator('.comment-marker').hover(); assert.ok(await page.locator('.comment-preview').isVisible());
+        await page.locator('.comment-marker').hover(); await page.locator('.comment-preview').waitFor({state:'visible'}); assert.ok(await page.locator('.comment-preview').isVisible());
         assert.equal(await page.locator('.comment-preview').innerText(),'Keep this point');
         await page.getByRole('button',{name:'View comments (1)'}).click();
         assert.ok((await page.locator('.annotation-entry').innerText()).includes('1. important'));
@@ -33,16 +30,17 @@ const fs = require('node:fs');
         assert.ok((await page.locator('.annotation-entry').innerText()).includes('1. L1-L1'));
         await page.getByRole('button',{name:'Close comments'}).click();
         await page.getByRole('button',{name:'View comments (2)'}).click();
+        await page.waitForFunction(()=>document.querySelectorAll('.annotation-entry').length===2);
         assert.equal(await page.locator('.annotation-entry').count(),2);
-        assert.ok((await page.locator('.annotation-entry').last().innerText()).includes('“Entry point”'));
+        assert.ok((await page.locator('.annotation-entry').last().innerText()).includes('Entry point'));
         const overlay = await page.locator('.annotation-list').boundingBox(), composer = await page.locator('.chat-composer').boundingBox();
         assert.ok(overlay.y + overlay.height <= composer.y, 'comments overlay appears above composer');
         assert.ok(Math.abs(overlay.width - composer.width) < 1 && Math.abs(overlay.x - composer.x) < 1, 'comments overlay spans the composer');
         assert.equal(await page.locator('.annotation-source').count(),0, 'file paths must not appear');
         await page.mouse.move(1100,700);
-        assert.equal(await page.locator('.annotation-edit-icon').first().evaluate(el=>getComputedStyle(el).opacity),'0');
+        assert.equal(await page.locator('.annotation-entry-actions').first().evaluate(el=>getComputedStyle(el).opacity),'0');
         await page.locator('.annotation-entry').first().hover();
-        assert.equal(await page.locator('.annotation-edit-icon').first().evaluate(el=>getComputedStyle(el).opacity),'1');
+        assert.equal(await page.locator('.annotation-entry-actions').first().evaluate(el=>getComputedStyle(el).opacity),'1');
         assert.equal(await page.locator('.annotation-summary').first().evaluate(el=>getComputedStyle(el).textOverflow),'ellipsis');
         await page.getByRole('button',{name:'Close comments'}).click();
         await page.locator('.cm-content').click(); await page.keyboard.press('Control+Home'); await page.keyboard.press('ArrowDown');
@@ -55,8 +53,11 @@ const fs = require('node:fs');
         await page.locator('.annotation-entry').first().hover();
         await page.locator('.annotation-entry').first().getByRole('button',{name:'Edit comment'}).click();
         await page.getByRole('textbox',{name:'Comment text'}).fill('Updated comment'); await page.getByRole('button',{name:'Save',exact:true}).click();
+        await page.locator('.chat-history').evaluate(el=>{el.scrollTop=0;});
+        await page.waitForFunction(()=>document.querySelector('.comment-preview')?.textContent==='Updated comment');
         assert.equal(await page.locator('.comment-preview').innerText(),'Updated comment');
         await page.getByRole('button',{name:'View comments (3)'}).click(); await page.locator('.annotation-entry').first().hover(); await page.locator('.annotation-entry').first().getByRole('button',{name:'Edit comment'}).click(); await page.getByRole('button',{name:'Delete',exact:true}).click();
+        await page.waitForFunction(()=>!document.querySelector('.comment-marker'));
         assert.equal(await page.locator('.comment-marker').count(),0);
         assert.equal(await page.locator('.chat-message-text').innerText(),'Please review this important sentence.');
         await page.getByRole('button',{name:'View comments (2)'}).click();
@@ -69,10 +70,64 @@ const fs = require('node:fs');
         }
         await page.evaluate(() => { const el=document.querySelector('.chat-message-text'), range=document.createRange(); range.selectNodeContents(el); const selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true})); });
         await page.getByRole('button',{name:'Comment on selected text'}).click(); await page.getByRole('textbox',{name:'Comment text'}).fill('Numbering restarts'); await page.getByRole('button',{name:'Save',exact:true}).click();
-        assert.equal(await page.locator('.comment-marker').evaluate(el=>el.firstChild.textContent),'1');
-        await page.evaluate(() => { for (let i=0;i<15;i++) dadoComments.comments.push({id:100+i,quote:'Long selected text '.repeat(12),text:'A long comment '.repeat(12),source:'Chat'}); dadoComments.changed(); });
+        assert.equal(await page.locator('.comment-marker').evaluate(el=>el.textContent),'1');
+        assert.equal(await page.locator('.chat-comment-context').count(),0,'composer has no duplicate per-comment chips');
+        await page.evaluate(()=>dadoChat.aiEvent({kind:'state',ready:true,account:{type:'fixture'},models:[{model:'fixture',displayName:'Fixture',isDefault:true,supportedReasoningEfforts:[]}]}));
+        await page.getByRole('button',{name:'Send message',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelectorAll('.chat-user-message').length===2);
+        const sent=await page.evaluate(()=>dadoChat.snapshot().messages.filter(m=>m.role==='user').at(-1));
+        assert.equal(sent.text,'','annotations can be sent without extra message text');
+        assert.equal(await page.locator('.chat-user-message').last().locator('.chat-user-bubble').count(),0,'annotation-only messages have no empty bubble');
+        assert.equal(await page.locator('.chat-user-message').last().locator(':scope > .annotation-summary-anchor').count(),1,'summary is a separate panel');
+        await page.waitForFunction(()=>!document.querySelector('.comment-highlight') && !document.querySelector('.comment-marker'));
+        assert.equal(sent.comments.length,1);assert.equal(sent.comments[0].text,'Numbering restarts');
+        assert.equal(sent.comments[0].quote,'Please review this important sentence.');
+        assert.equal(await page.locator('#pending-annotations').isHidden(),true,'send clears pending summary');
+        assert.equal(await page.locator('#pending-ideas').isHidden(),true,'send clears pending ideas');
+        await page.locator('.chat-history').evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{deltaY:-300})));
+        await page.locator('.chat-user-message').last().scrollIntoViewIfNeeded();
+        await page.getByRole('button',{name:'View comments (1)',exact:true}).click();
+        assert.equal(await page.locator('.annotation-entry').innerText(),'1. Please review this important sentence.\nNumbering restarts');
+        assert.equal(await page.getByRole('button',{name:'Edit comment',exact:true}).count(),0,'sent summary preserves immutable context');
+        await page.screenshot({path:'target/ui-reference/annotations-sent.png'});
+        await page.getByRole('button',{name:'Close comments'}).click();
+        await page.evaluate(()=>{
+            const original=dadoComments.comments[0];
+            dadoComments.comments.push({...original,id:original.id+1,contextId:'next-draft-annotation',text:'Next draft',contextSentSnapshot:undefined,onSave:undefined,onDelete:undefined});
+            dadoComments.changed();
+        });
+        await page.locator('.chat-history').evaluate(el=>{el.scrollTop=0;});
+        await page.waitForFunction(()=>document.querySelector('.comment-marker')?.textContent==='1');
+        await page.locator('#annotation-ui .annotation-summary-control:has(.annotation-clear)').getByRole('button',{name:'View comments (1)',exact:true}).waitFor({state:'visible'});
+        await page.evaluate(()=>{
+            const added=dadoComments.comments.pop();added.onDelete?.();
+            dadoComments.comments[0].text='Edited after sending';dadoComments.changed();
+        });
+        const immutable=await page.evaluate(()=>dadoChat.snapshot().messages.filter(m=>m.role==='user').at(-1).comments[0].text);
+        assert.equal(immutable,'Numbering restarts');
+        await page.evaluate(() => { for (let i=0;i<15;i++) dadoComments.comments.push({id:100+i,contextId:'native-test-context-'+i,quote:'Long selected text '.repeat(12),text:'A long comment '.repeat(12),source:'Chat'}); dadoComments.changed(); });
         await page.getByRole('button',{name:'View comments (16)'}).click();
         assert.ok(await page.locator('.annotation-list').evaluate(el => el.scrollHeight > el.clientHeight && el.clientHeight <= innerHeight * .55), 'long comment list has a bounded scrollable height');
+        await page.getByRole('button',{name:'Close comments'}).click();
+        await page.getByRole('button',{name:'Remove annotations from message'}).focus();
+        await page.getByRole('button',{name:'Remove annotations from message'}).click();
+        await page.waitForFunction(()=>document.querySelector('#pending-annotations').hidden);
+        assert.equal(await page.evaluate(()=>dadoComments.comments.length),16,'removing draft context keeps source annotations');
+        await page.evaluate(()=>{
+            const chat=dadoChat.snapshot(),comments=chat.messages.filter(m=>m.role==='user').at(-1).comments;
+            dadoChat.setConversation(chat.id,{messages:[...chat.messages,{id:'mixed-annotation',role:'user',text:'Separate message text',comments,time:new Date().toISOString()}]});
+            document.querySelector('.chat-history').scrollTop=document.querySelector('.chat-history').scrollHeight;
+        });
+        const mixed=page.locator('[data-message="mixed-annotation"]');
+        const summaryBox=await mixed.locator(':scope > .annotation-summary-anchor').boundingBox();
+        const bubbleBox=await mixed.locator('.chat-user-bubble').boundingBox();
+        assert.ok(summaryBox.y+summaryBox.height<bubbleBox.y,'annotation panel sits above the text bubble');
+        assert.equal(await mixed.locator('.chat-user-bubble .annotation-summary-anchor').count(),0);
+        await page.screenshot({path:'target/ui-reference/annotations-separate-panel.png'});
         assert.deepEqual(errors,[]); console.log('Comment integration passed: chat selection, bubbles, badge, overlay, code selection, line comments, editing and deletion.');
-    } finally { await browser.close(); }
+    } catch (error) {
+        console.error(await page.evaluate(() => ({comments: dadoComments.comments, badges: [...document.querySelectorAll('.comment-badge')].map(el => el.getAttribute('aria-label'))})));
+        await page.screenshot({path: 'target/ui-reference/comments-failure.png'}).catch(() => {});
+        throw error;
+    } finally { await app.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;});

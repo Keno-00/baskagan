@@ -17,6 +17,14 @@ struct Interaction {
     path: Option<PathBuf>,
     text: Option<String>,
     directory: Option<bool>,
+    #[serde(default)]
+    paths: Vec<PathBuf>,
+    #[serde(default)]
+    x: f64,
+    #[serde(default)]
+    y: f64,
+    point: Option<serde_json::Value>,
+    command: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -31,8 +39,10 @@ struct Scene<'a> {
 pub fn Constellation(root: PathBuf) -> Element {
     let mut folder = use_signal(|| root.clone());
     let mut overview = use_signal(|| false);
+    let mut view = use_signal(|| "folders".to_string());
     let mut revision = use_signal(|| 0u64);
     let mut ready = use_signal(|| false);
+    let mut context = use_signal(|| None::<crate::systems_ui::Context>);
     let mut status = use_context::<Status>();
     let mut workbench = use_context::<Workbench>();
     let watch_root = root.clone();
@@ -94,9 +104,9 @@ pub fn Constellation(root: PathBuf) -> Element {
     });
 
     let navigation_root = root.clone();
-    use_future(move || {
+    let start_scene = move |_| {
         let root = navigation_root.clone();
-        async move {
+        spawn(async move {
             let source = format!(
                 "{}\n{}",
                 include_str!("scene_math.js"),
@@ -106,6 +116,14 @@ pub fn Constellation(root: PathBuf) -> Element {
             while let Ok(message) = bridge.recv::<Interaction>().await {
                 match message.action.as_str() {
                     "ready" => ready.set(true),
+                    "context" => context.set(Some(crate::systems_ui::Context {
+                        paths: message.paths,
+                        command: message.command,
+                        folder: folder.peek().clone(),
+                        x: message.x,
+                        y: message.y,
+                        point: message.point.unwrap_or_default(),
+                    })),
                     "hint" => status.hint.set(message.text),
                     "select" => {
                         workbench
@@ -144,12 +162,13 @@ pub fn Constellation(root: PathBuf) -> Element {
                     _ => {}
                 }
             }
-        }
-    });
+        });
+    };
 
     use_effect(move || {
         status.path.set(folder().display().to_string());
     });
+    let scene_root = root.clone();
     use_effect(move || {
         if !ready() {
             return;
@@ -164,23 +183,28 @@ pub fn Constellation(root: PathBuf) -> Element {
                 parent: current
                     .parent()
                     .map(PathBuf::from)
-                    .filter(|p| p.starts_with(&root)),
+                    .filter(|p| p.starts_with(&scene_root)),
                 overview: overview.peek().to_owned(),
             };
             if let Ok(json) = serde_json::to_string(&scene) {
-                let _ = document::eval(&format!("window.dadoScene?.setGraph({json});"));
+                let _ = document::eval(&format!("window.dadoScene?.setFolderGraph({json});"));
             }
         }
     });
 
     rsx! {
-        section { class: "constellation",
+        section { class: "constellation", onmounted: start_scene, "data-ready": if tree.read().as_ref().is_some_and(|graph| graph.is_some()) { "true" } else { "false" },
+            crate::systems_ui::SystemsMenu {root:root.clone(),context}
             nav { class: "icon-controls", aria_label: "View controls",
+                // TODO: Restore System diagram after its design is agreed with the user.
+                for (id,label,icon) in [("folders","Folder hierarchy","folder"),("mental","Mental model","mental")] {
+                    crate::ui_controls::UiButton {label,icon,class:"icon-button",pressed:Some(view()==id),onpress:move |_|view.set(id.into())}
+                }
                 button { class: if overview() { "icon-button selected" } else { "icon-button" },
-                    aria_label: if overview() { "Show current folder" } else { "Show overview" }, aria_pressed: "{overview}",
-                    onmouseenter: move |_| status.hint.set(Some(if overview() { "Show only the current folder's contents" } else { "Show all levels below the current folder" }.into())),
+                    aria_label: if overview() { if view()=="folders" {"Show current folder"} else {"Show current concept"} } else { "Show overview" }, aria_pressed: "{overview}",
+                    onmouseenter: move |_| status.hint.set(Some(if overview() { if view()=="folders" {"Show only the current folder's contents"} else {"Show the current concept and its responsibilities"} } else { "Show all levels below the current location" }.into())),
                     onmouseleave: move |_| status.hint.set(None),
-                    onfocus: move |_| status.hint.set(Some("Toggle folder view and overview".into())),
+                    onfocus: move |_| status.hint.set(Some("Toggle current level and overview".into())),
                     onblur: move |_| status.hint.set(None), onclick: move |_| overview.toggle(),
                     svg { view_box: "0 0 24 24", "aria-hidden": "true",
                         path { d: "M12 5v5M5 14v-4h14v4M12 10v4" }
@@ -213,8 +237,11 @@ pub fn Constellation(root: PathBuf) -> Element {
                     }
                 }
             }
+            crate::project_model::ProjectViews {root:root.clone(),view,overview,ready}
             svg { id: "folder-scene", class: "graph", view_box: "-600 -300 1200 650", tabindex: "0", "aria-label": "Folder structure",
                 defs {
+                    marker {id:"workflow-arrow",view_box:"0 0 10 10",ref_x:"9",ref_y:"5",marker_width:"6",marker_height:"6",orient:"auto-start-reverse",path{d:"M0 0L10 5L0 10",fill:"currentColor"}}
+
                     linearGradient { id: "boundary-fade", x1: "0", y1: "0", x2: "0", y2: "1",
                         stop { offset: "0%", stop_color: "black" }
                         stop { offset: "12%", stop_color: "white" }
@@ -234,6 +261,7 @@ pub fn Constellation(root: PathBuf) -> Element {
                         rect { x: "-600", y: "-300", width: "1200", height: "650", fill: "url(#side-fade)" }
                     }
                 }
+                polygon {id:"scene-lasso",class:"scene-lasso",points:""}
                 g { id: "scene-content", mask: "url(#scene-mask)",
                     g { mask: "url(#side-mask)",
                         g { id: "scene-edges" }

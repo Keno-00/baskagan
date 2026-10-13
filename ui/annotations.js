@@ -1,58 +1,65 @@
 if (!window.dadoComments) {
-    const comments = [];
-    const listeners = new Set();
-    let next = 0, popup = null, draft = null;
+    const comments = [], listeners = new Set();
+    let next = 0, popup = null, draft = null, selection = null, frame = 0, revision = 0;
+    const anchors = new Map();
     const glyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4z"/></svg>';
     const identity = () => crypto.randomUUID?.() || `${Date.now()}-${Array.from(crypto.getRandomValues(new Uint32Array(3))).join('-')}`;
-    const node = (tag, cls, text) => { const el = document.createElement(tag); el.className = cls; if (text !== undefined) el.textContent = text; return el; };
-    function close() { popup?.remove(); popup = null; draft = null; }
-    function position(el, rect) {
-        const width = Math.min(380, window.innerWidth - 32);
-        el.style.width = `${width}px`;
-        el.style.left = `${Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16))}px`;
-        el.style.top = `${Math.max(16, Math.min(rect.bottom + 8, window.innerHeight - el.offsetHeight - 16))}px`;
-    }
-    function notify() { if (!comments.length) next = 0; listeners.forEach(listener => listener(comments)); }
-    function edit(item, rect, fresh = false) {
-        close(); draft = item;
-        popup = node('form', 'annotation-popup annotation-edit'); popup.setAttribute('aria-label', 'Comment');
-        const quote = node('div', 'annotation-quote', item.quote);
-        const input = node('textarea', 'annotation-input'); input.placeholder = 'Leave a comment'; input.setAttribute('aria-label', 'Comment text'); input.value = item.text || '';
-        const actions = node('div', 'annotation-actions');
-        if (!fresh) { const remove = node('button', '', 'Delete'); remove.type = 'button'; remove.onclick = () => { comments.splice(comments.indexOf(item), 1); item.onDelete?.(); close(); notify(); }; actions.append(remove); }
-        const cancel = node('button', '', 'Cancel'); cancel.type = 'button'; cancel.onclick = close;
-        const save = node('button', '', 'Save'); save.type = 'submit'; save.disabled = !input.value.trim(); input.oninput = () => { save.disabled = !input.value.trim(); };
-        actions.append(cancel, save); popup.append(quote, input, actions); document.body.append(popup); position(popup, rect);
-        popup.onsubmit = event => { event.preventDefault(); if (!input.value.trim()) return; item.text = input.value.trim(); if (fresh) { item.id = ++next; item.contextId=identity(); comments.push(item); item.onSave?.(item); } close(); notify(); };
-        input.focus();
-    }
-    function list(rect, items = comments, selection = null) {
-        close(); popup = node('section', 'annotation-popup annotation-list'); popup.setAttribute('aria-label', 'Comments');
-        const closeButton = node('button', 'annotation-close', '×'); closeButton.setAttribute('aria-label', 'Close comments'); closeButton.onclick = close; popup.append(closeButton);
-        items.forEach((item, index) => {
-            const row = node('div', 'annotation-entry');
-            const label = item.source === 'Chat' ? item.quote : `L${item.lineFrom}-L${item.lineTo}`;
-            const quote = node('div', 'annotation-quote annotation-summary', `${index + 1}. ${label}`);
-            row.append(quote, node('div', 'annotation-comment', `“${item.text}”`));
-            const button = node('button', 'annotation-edit-icon'); button.setAttribute('aria-label', 'Edit comment'); button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 15 10-10 4 4-10 10-5 1zM13 7l4 4"/></svg>'; button.onclick = () => edit(item, rect); row.append(button); popup.append(row);
-            if(selection) {
-                const include=node('button','annotation-include-icon');include.type='button';include.setAttribute('aria-label',`Include comment ${item.id} in next message`);include.setAttribute('aria-pressed',String(selection.selected(item)));
-                const render=()=>{const selected=selection.selected(item);include.setAttribute('aria-pressed',String(selected));include.setAttribute('aria-label',`${selected?'Remove':'Include'} comment ${item.id} ${selected?'from':'in'} next message`);include.innerHTML=selected?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';};render();
-                include.onclick=()=>{selection.toggle(item);render();};
-                const help=()=>selection.hint(selection.selected(item)?'Remove comment from the next message':'Include this comment in the next message');include.onmouseenter=help;include.onfocus=help;include.onmouseleave=()=>selection.hint(null);include.onblur=()=>selection.hint(null);
-                row.append(include);
+    const rectValue = r => ({left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height});
+    const itemValue = item => ({id:item.contextId || String(item.id),label:['Systems','systems','idea'].includes(item.source) ? item.quote : item.source === 'Chat' || item.source === 'chat' ? item.quote : `L${item.lineFrom}-L${item.lineTo}`,quote:item.quote || '',text:item.text || ''});
+    function publish() {
+        cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
+            const controls=[];
+            for(const [key,entry] of anchors) {
+                if(!entry.el.isConnected) {anchors.delete(key);continue;}
+                const items=entry.items(); const rect=entry.el.getBoundingClientRect();
+                const viewport=entry.el.closest('.chat-history')?.getBoundingClientRect();
+                if(!items.length || !rect.width || !rect.height || (viewport && (rect.bottom<viewport.top || rect.top>viewport.bottom)))continue;
+                controls.push({key,kind:entry.kind,rect:rectValue(rect),count:items.length,preview:entry.kind==='marker'?items[0].text:'',text:entry.kind.startsWith('ideas')?`${items.length} Ideas/Things`:entry.kind==='marker'?String(items[0].draftNumber || items[0].id):`${items.length} annotation${items.length===1?'':'s'}`});
             }
+            const state={revision,popup,selection:selection?rectValue(selection.rect):null,controls};
+            window.dadoAnnotationState=state;
+            document.dispatchEvent(new CustomEvent('dado-annotations',{detail:state}));
         });
-        document.body.append(popup);
-        const width = Math.min(rect.width, window.innerWidth - 32); popup.style.width = `${width}px`;
-        popup.style.left = `${Math.max(16, Math.min(rect.left, window.innerWidth - width - 16))}px`;
-        popup.style.top = `${Math.max(16, rect.top - popup.offsetHeight - 10)}px`;
     }
-    document.addEventListener('pointerdown', event => { if (popup && !popup.contains(event.target) && !event.target.closest('.annotation-trigger, .comment-marker, .comment-badge')) close(); });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
-    window.addEventListener('resize', close);
-    window.dadoComments = { comments, glyph, begin: (item, rect) => edit(item, rect, true), edit, list, close,
-        replace(items) { close(); items.forEach(item=>{item.contextId ||= identity();}); comments.splice(0, comments.length, ...items); next = Math.max(0, ...items.map(item => item.id || 0)); notify(); },
-        subscribe(listener) { listeners.add(listener); listener(comments); return () => listeners.delete(listener); },
-        changed: notify };
+    function close() {popup=null;draft=null;publish();}
+    function notify() {if(!comments.length)next=0;listeners.forEach(listener=>listener(comments));publish();}
+    function edit(item,rect,fresh=false) {
+        selection=null; draft={item,fresh};
+        popup={idea:item.kind==='idea',kind:'edit',rect:rectValue(rect),items:[itemValue(item)],fresh,readonly:false};revision++;publish();
+    }
+    function list(rect,items=comments,options={}) {
+        selection=null;draft=null;
+        popup={idea:items.length>0 && items.every(item=>item.kind==='idea' || item.source==='idea'),kind:'list',rect:rectValue(rect),items:items.map(itemValue),readonly:!!options.readonly};revision++;publish();
+    }
+    function anchor(el,key,items,kind='summary',remove=null) {anchors.set(key,{el,items,kind,remove});publish();}
+    function command(action,key,value) {
+        if(action==='close'){close();return;}
+        if(action==='select'){const chosen=selection;selection=null;chosen?.open();publish();return;}
+        if(action==='open') {
+            const entry=anchors.get(key);if(!entry)return;
+            const source=entry.el.getBoundingClientRect(),composer=entry.el.closest('#chat-host')?.querySelector('.chat-composer')?.getBoundingClientRect();
+            const rect=composer?{left:composer.left,right:composer.right,width:composer.width,top:entry.kind==='summary'?composer.top:source.top,bottom:source.bottom,height:source.height}:source;
+            list(rect,entry.items(),{readonly:entry.kind==='sent' || entry.kind==='ideas-sent'});return;
+        }
+        if(action==='clear') {const entry=anchors.get(key);entry?.remove?.();close();return;}
+        const item=comments.find(item=>(item.contextId || String(item.id))===key);
+        if(action==='edit' && item){edit(item,popup.rect);return;}
+        if(action==='delete' && item){comments.splice(comments.indexOf(item),1);item.onDelete?.();close();notify();return;}
+        if(action==='save' && draft && value.trim()) {
+            const {item,fresh}=draft;item.text=value.trim();
+            if(fresh){item.id=++next;item.contextId=identity();comments.push(item);item.onSave?.(item);}
+            close();notify();
+            document.querySelector('.chat-composer textarea')?.focus();
+        }
+    }
+    document.addEventListener('pointerdown',event=>{if(popup && !event.target.closest('#annotation-ui, .annotation-trigger, .comment-marker, .comment-badge'))close();});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape'){selection=null;close();}});
+    document.addEventListener('scroll',publish,true);
+    window.addEventListener('resize',()=>{selection=null;close();});
+    new ResizeObserver(publish).observe(document.documentElement);
+    new MutationObserver(publish).observe(document.getElementById('chat-host'),{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden','class','style']});
+    window.dadoComments={comments,glyph,begin:(item,rect)=>edit(item,rect,true),edit,list,close,command,anchor,publish,
+        select(rect,open){selection=rect?{rect,open}:null;publish();},
+        replace(items){close();items.forEach(item=>{item.contextId ||= identity();});comments.splice(0,comments.length,...items);next=Math.max(0,...items.map(item=>item.id || 0));notify();},
+        subscribe(listener){listeners.add(listener);listener(comments);return()=>listeners.delete(listener);},changed:notify};
 }

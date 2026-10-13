@@ -1,7 +1,7 @@
 import { EditorView, basicSetup } from 'codemirror';
 import { keymap } from '@codemirror/view';
 import { Decoration, ViewPlugin } from '@codemirror/view';
-import { StateEffect, Compartment, EditorState } from '@codemirror/state';
+import { StateEffect, StateField, Compartment, EditorState } from '@codemirror/state';
 import './annotations.js';
 import './review.js';
 import { undo, redo, selectAll, deleteCharForward, indentWithTab } from '@codemirror/commands';
@@ -16,27 +16,6 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
-const paths = {
-    terminal: 'M4 5h16v14H4zM7 9l3 3-3 3m5 0h4',
-    editor: 'M7 3h7l4 4v14H7zM14 3v5h4M10 12h5m-5 4h5',
-    folder: 'M3 7h7l2 2h9v11H3zM3 7V4h7l2 3',
-    save: 'M5 4h13l2 2v14H4V4zM8 4v6h8V4M8 20v-7h8v7',
-    plus: 'M12 5v14M5 12h14',
-    close: 'M7 7l10 10M17 7L7 17',
-    chevron: 'M9 5l7 7-7 7',
-};
-function icon(name) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
-    const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', paths[name]);
-    svg.append(path); return svg;
-}
-function element(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-}
 function language(path) {
     const extension = path.split('.').pop().toLowerCase();
     if (extension === 'rs') return rust();
@@ -44,15 +23,27 @@ function language(path) {
     return { json, py: python, md: markdown, html, css }[extension]?.() || [];
 }
 const editorTheme = EditorView.theme({
-    '&': { height: '100%', fontSize: '12px', backgroundColor: '#fafafa' },
+    '&': { height: '100%', fontSize: '12px', backgroundColor: 'var(--ui-workbench-content)', color: 'var(--ui-workbench-foreground)' },
     '.cm-scroller': { fontFamily: 'Consolas, "Cascadia Code", monospace', lineHeight: '1.7', overflow: 'auto' },
-    '.cm-content': { padding: '12px 0', caretColor: '#333' },
+    '.cm-content': { padding: '12px 0', caretColor: 'var(--ui-accent)' },
     '.cm-line': { padding: '0 16px 0 8px' },
-    '.cm-gutters': { backgroundColor: '#fafafa', color: '#aaa', border: 'none', paddingLeft: '8px' },
-    '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: '#f0f0f0' },
+    '.cm-gutters': { backgroundColor: 'var(--ui-workbench-content)', color: 'var(--ui-muted)', border: 'none', paddingLeft: '8px' },
+    '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--ui-workbench-hover)' },
     '&.cm-focused': { outline: 'none' },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: '#ddd' },
-    '.cm-panels': { backgroundColor: '#f2f2f2', border: 'none', fontFamily: '"Segoe UI", sans-serif' },
+    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--ui-selection)' },
+    '.cm-line.cm-source-flash': { backgroundColor: 'color-mix(in srgb, var(--ui-accent) 36%, transparent)' },
+    '.cm-panels': { backgroundColor: 'var(--ui-workbench-control)', color: 'var(--ui-workbench-foreground)', border: 'none', fontFamily: '"Segoe UI", sans-serif' },
+});
+const sourceFlashEffect = StateEffect.define();
+const sourceFlashField = StateField.define({
+    create: () => Decoration.none,
+    update(decorations, transaction) {
+        let next = decorations.map(transaction.changes);
+        for (const effect of transaction.effects)
+            if (effect.is(sourceFlashEffect)) next = effect.value;
+        return next;
+    },
+    provide: field => EditorView.decorations.from(field),
 });
 
 window.startWorkbench = send => {
@@ -67,105 +58,100 @@ window.startWorkbench = send => {
         send({ action: 'hint', text: text || null });
         if (duration) hintTimer = setTimeout(() => hint(null), duration);
     };
+    function terminalTheme(terminalHost) {
+        const surface = getComputedStyle(terminalHost);
+        return {
+            background: surface.backgroundColor,
+            foreground: surface.color,
+            cursor: surface.getPropertyValue('--ui-accent').trim(),
+        };
+    }
+    function updateTerminalThemes() {
+        for (const tab of tabs) if (tab.terminal && tab.terminalHost)
+            tab.terminal.options.theme = terminalTheme(tab.terminalHost);
+    }
+    document.addEventListener('dado-appearance-change', updateTerminalThemes);
     const rpc = (action, data = {}) => new Promise((resolve, reject) => {
         const id = ++requestId;
         pending.set(id, { resolve, reject }); send({ action, id, ...data });
     });
-    const button = (name, label, action, text = false) => {
-        const node = element('button', text ? 'type-button' : 'workbench-icon');
-        node.type = 'button'; node.setAttribute('aria-label', label); node.append(icon(name));
-        if (text) node.append(element('span', '', label));
-        node.addEventListener('click', action);
-        node.addEventListener('mouseenter', () => hint(label));
-        node.addEventListener('mouseleave', () => hint(null));
-        node.addEventListener('focus', () => hint(label));
-        node.addEventListener('blur', () => hint(null));
-        return node;
-    };
-    const bar = element('div', 'tab-bar'), tabList = element('div', 'tab-list');
-    tabList.setAttribute('role', 'tablist');
-    const plus = button('plus', 'New tab', () => newChoice());
-    bar.append(tabList, plus);
-    const notices = element('div', 'workbench-notices');
-    const bodies = element('div', 'tab-bodies');
-    host.append(bar, notices, bodies);
-
-    function report(error) {
-        notices.replaceChildren();
-        const row = element('div', 'editor-notice');
-        row.setAttribute('role', 'alert'); row.append(element('span', '', String(error.message || error)));
-        row.append(button('close', 'Dismiss message', () => notices.replaceChildren())); notices.append(row);
-        hint(String(error.message || error), 4000);
-    }
+    let notice = null;
+    // Dioxus renders the shell. This adapter retains live widget sessions and
+    // publishes their metadata; shell commands come from Dioxus event handlers.
     function renderTabs() {
-        tabList.replaceChildren();
-        for (const tab of tabs) {
-            const row = element('div', tab.id === active ? 'panel-tab active' : 'panel-tab');
-            const title = element('button', 'tab-title'); title.type = 'button';
-            title.setAttribute('role', 'tab'); title.setAttribute('aria-selected', String(tab.id === active));
-            title.setAttribute('aria-controls', `tab-body-${tab.id}`);
-            title.append(icon(tab.type === 'terminal' ? 'terminal' : 'editor'));
-            title.append(element('span', 'tab-name', tab.title || 'New tab'));
-            if (tab.dirty) title.append(element('span', 'dirty-dot', '•'));
-            title.addEventListener('click', () => activate(tab));
-            title.addEventListener('mouseenter', () => hint(tab.path || tab.title || 'Choose a tab type'));
-            title.addEventListener('mouseleave', () => hint(null));
-            row.append(title, button('close', `Close ${tab.title || 'tab'}`, () => closeTab(tab)));
-            tabList.append(row);
-        }
+        if (disposed) return;
+        send({action: 'ui', state: {active, notice, tabs: tabs.map(tab => ({
+            id: tab.id, kind: tab.type, title: tab.title, path: tab.path,
+            dirty: tab.dirty, browser: tab.browser, loading: !!tab.loading,
+            saving: !!tab.saving, locked: !!tab.agentLocked,
+            operation: tab.pendingChange?.operation || null,
+            commentTop: tab.commentTop ?? null, markers: tab.markers || [],
+        }))}});
+    }
+    async function mounted(id) {
+        const find = () => document.getElementById(id);
+        if (find()) return find();
+        return new Promise((resolve, reject) => {
+            const observer = new MutationObserver(() => {
+                const node = find();
+                if (node) { observer.disconnect(); clearTimeout(timer); resolve(node); }
+            });
+            const timer = setTimeout(() => { observer.disconnect(); reject(new Error('Dioxus widget host did not mount.')); }, 10000);
+            observer.observe(host, {childList: true, subtree: true});
+        });
+    }
+    function report(error) {
+        notice = {text: String(error.message || error), tab: null}; renderTabs();
+        hint(notice.text, 4000);
     }
     function activate(tab) {
-        active = tab.id;
-        for (const entry of tabs) entry.body.hidden = entry.id !== active;
-        renderTabs(); notices.replaceChildren();
+        active = tab.id; notice = null; renderTabs();
         if (tab.path) { selectedFile = tab.path; send({action: 'selected', path: tab.path}); }
         requestAnimationFrame(() => { tab.view?.requestMeasure(); fitTerminal(tab); });
     }
     function createTab() {
         const tab = { id: ++sequence, type: 'choice', title: 'New tab', dirty: false, browser: false, path: null };
-        tab.body = element('section', 'tab-body'); tab.body.id = `tab-body-${tab.id}`;
-        tab.body.setAttribute('role', 'tabpanel'); bodies.append(tab.body); tabs.push(tab); activate(tab); return tab;
+        tabs.push(tab); activate(tab); return tab;
     }
-    function newChoice() {
-        const tab = createTab();
-        const chooser = element('div', 'tab-chooser');
-        chooser.append(button('terminal', 'Terminal', () => createTerminal(tab), true));
-        chooser.append(button('editor', 'Editor', () => createEditor(tab, selectedFile), true));
-        tab.body.append(chooser); return tab;
-    }
+    function newChoice() { return createTab(); }
     async function save(tab) {
         if (!tab.view || !tab.path || tab.saving || tab.agentLocked) return false;
-        tab.saving = true;
+        tab.saving = true; renderTabs();
         const snapshot = tab.view.state.doc.toString();
         const text = (tab.bom ? '\ufeff' : '') + snapshot.replace(/\n/g, tab.newline);
         try {
-            await rpc('save', { path: tab.path, text, expected: tab.original });
+            if(tab.pendingChange) {
+                const change=tab.pendingChange;
+                await window.dadoChat.saveReviewedFile(change,text);
+                if(change.operation==='delete') {
+                    for(const entry of [...tabs]) if(entry.pendingChange?.requestId===change.requestId && entry.path===tab.path)removeTab(entry);
+                    hint('Deleted reviewed file',1800);return true;
+                }
+                for(const entry of tabs) if(entry.pendingChange?.requestId===change.requestId && entry.path===tab.path){entry.pendingChange=null;entry.original=text;entry.savedText=snapshot;entry.dirty=entry.view.state.doc.toString()!==snapshot;}
+            } else await rpc('save', { path: tab.path, text, expected: tab.original });
+            window.dispatchEvent(new CustomEvent('dado-scene-activity',{detail:{root,action:'changed',paths:[tab.path],status:'completed'}}));
             tab.original = text; tab.savedText = snapshot;
             tab.dirty = tab.view.state.doc.toString() !== snapshot; renderTabs();
             hint(`Saved ${tab.path}`, 1800); return true;
         } catch (error) { report(error); return false; }
-        finally { tab.saving = false; }
+        finally { tab.saving = false; renderTabs(); }
     }
     function closeTab(tab) {
-        if(tab.agentLocked) return;
+        if (tab.agentLocked) return;
         if (tab.dirty) {
-            notices.replaceChildren();
-            const row = element('div', 'unsaved-notice');
-            row.append(element('span', '', `Save changes to ${tab.title}?`));
-            const saveClose = element('button', '', 'Save & close');
-            saveClose.onclick = async () => { if (await save(tab) && !tab.dirty) removeTab(tab); };
-            const discard = element('button', '', 'Discard'); discard.onclick = () => removeTab(tab);
-            const cancel = element('button', '', 'Cancel'); cancel.onclick = () => notices.replaceChildren();
-            row.append(saveClose, discard, cancel); notices.append(row); return;
+            const deleting = tab.pendingChange?.operation === 'delete';
+            notice = {text: deleting ? `Delete ${tab.title}?` : `Save changes to ${tab.title}?`, tab: tab.id, deleting};
+            renderTabs(); return;
         }
         removeTab(tab);
     }
     function removeTab(tab) {
-        tab.closed = true;
-        tab.commentCleanup?.();
+        if (tab.agentLocked || tab.closed) return;
+        if (tab.sourceFlashTimer) clearTimeout(tab.sourceFlashTimer);
+        tab.closed = true; tab.commentCleanup?.();
         tab.view?.destroy(); tab.terminal?.dispose(); tab.terminalResize?.dispose();
-        if (tab.type === 'terminal') rpc('terminal_close', { tab: tab.id }).catch(report);
-        const index = tabs.indexOf(tab); tabs.splice(index, 1); tab.body.remove(); notices.replaceChildren();
+        if (tab.type === 'terminal') rpc('terminal_close', {tab: tab.id}).catch(report);
+        const index = tabs.indexOf(tab); tabs.splice(index, 1); notice = null;
         if (tab.id === active) {
             if (tabs.length) activate(tabs[Math.min(index, tabs.length - 1)]);
             else newChoice();
@@ -181,36 +167,25 @@ window.startWorkbench = send => {
         } catch (error) { report(error); }
     }
     function createEditor(tab, path) {
-        tab.type = 'editor'; tab.title = 'Open file'; tab.body.replaceChildren();
-        const toolbar = element('div', 'editor-toolbar');
-        tab.caption = element('div', 'editor-caption', 'Open file');
-        tab.commentListRect = () => document.querySelector('.chat-composer')?.getBoundingClientRect() || tab.body.getBoundingClientRect();
-        toolbar.append(tab.caption, button('editor', 'Open file', () => pick(tab)));
-        tab.saveButton = button('save', 'Save file · Ctrl+S', () => save(tab)); tab.saveButton.disabled = true;
-        toolbar.append(tab.saveButton, button('folder', 'Toggle file browser', () => {
-            tab.browser = !tab.browser; tab.explorer.hidden = !tab.browser;
-            tab.view?.requestMeasure(); if (tab.browser) renderExplorer(tab);
-        }));
-        const content = element('div', 'editor-layout');
-        tab.editorHost = element('div', 'editor-host');
-        const empty = element('div', 'open-file-empty');
-        empty.append(button('folder', 'Open file', () => pick(tab), true)); tab.editorHost.append(empty);
-        tab.explorer = element('aside', 'file-explorer'); tab.explorer.hidden = true;
-        content.append(tab.editorHost, tab.explorer); tab.body.append(toolbar, content); renderTabs();
-        if (path) loadFile(tab, path);
+        tab.type = 'editor'; tab.title = 'Open file';
+        tab.commentListRect = () => document.querySelector('.chat-composer')?.getBoundingClientRect()
+            || document.getElementById(`tab-body-${tab.id}`).getBoundingClientRect();
+        renderTabs(); if (path) loadFile(tab, path);
     }
-    async function loadFile(tab, path) {
+    async function loadFile(tab, path, initialFile=null) {
         if(tab.agentLocked) return;
         tab.loading = true;
         try {
-            const file = await rpc('read', { path });
+            const file = initialFile || await rpc('read', { path });
             if (tab.closed) return;
             tab.path = file.path; tab.title = file.path.split(/[\\/]/).pop();
-            tab.original = file.text; tab.bom = file.text.startsWith('\ufeff');
+            tab.pendingChange=null;tab.original = file.exists===false?null:file.text; tab.bom = file.text.startsWith('\ufeff');
             tab.newline = file.text.includes('\r\n') ? '\r\n' : '\n';
             const content = file.text.replace(/^\ufeff/, '').replace(/\r\n/g, '\n');
             tab.savedText = content; tab.dirty = false;
-            tab.caption.textContent = tab.title; tab.saveButton.disabled = false;
+            renderTabs();
+            tab.editorHost = await mounted(`editor-widget-${tab.id}`);
+            if (tab.closed) return;
             tab.view?.destroy(); tab.editorHost.replaceChildren();
             tab.commentCleanup?.();
             const refreshComments = StateEffect.define();
@@ -218,13 +193,13 @@ window.startWorkbench = send => {
             const commentPlugin = ViewPlugin.fromClass(class {
                 constructor(view) { this.decorations = this.build(view); }
                 build(view) {
-                    return Decoration.set(annotations.comments.filter(item => item.source === path && item.to > item.from && item.to <= view.state.doc.length)
+                    return Decoration.set(annotations.comments.filter(item => item.source === tab.path && item.to > item.from && item.to <= view.state.doc.length)
                         .map(item => Decoration.mark({class: 'comment-code-highlight', attributes: {'data-comment': String(item.id)}}).range(item.from, item.to)), true);
                 }
                 update(update) {
-                    if (update.docChanged) annotations.comments.filter(item => item.source === path).forEach(item => { item.from = update.changes.mapPos(item.from, 1); item.to = update.changes.mapPos(item.to, -1); if (item.to < item.from) item.to = item.from; });
+                    if (update.docChanged) annotations.comments.filter(item => item.source === tab.path).forEach(item => { item.from = update.changes.mapPos(item.from, 1); item.to = update.changes.mapPos(item.to, -1); if (item.to < item.from) item.to = item.from; });
                     if (update.docChanged) queueMicrotask(() => annotations.changed());
-                    annotations.comments.filter(item => item.source === path).forEach(item => { item.lineFrom = update.state.doc.lineAt(Math.min(item.from, update.state.doc.length)).number; item.lineTo = update.state.doc.lineAt(Math.min(Math.max(item.from, item.to - 1), update.state.doc.length)).number; });
+                    annotations.comments.filter(item => item.source === tab.path).forEach(item => { item.lineFrom = update.state.doc.lineAt(Math.min(item.from, update.state.doc.length)).number; item.lineTo = update.state.doc.lineAt(Math.min(Math.max(item.from, item.to - 1), update.state.doc.length)).number; });
                     this.decorations = this.build(update.view);
                     requestAnimationFrame(() => tab.positionComment?.());
                 }
@@ -232,10 +207,10 @@ window.startWorkbench = send => {
             tab.agentLock = new Compartment();
             tab.view = new EditorView({
                 parent: tab.editorHost, doc: content,
-                extensions: [basicSetup, editorTheme, language(file.path), commentPlugin, tab.agentLock.of(EditorState.readOnly.of(false)), keymap.of([
+                extensions: [basicSetup, editorTheme, language(file.path), commentPlugin, sourceFlashField, tab.agentLock.of(EditorState.readOnly.of(false)), keymap.of([
                     { key: 'Mod-s', run: () => { save(tab); return true; } }, indentWithTab,
                 ]), EditorView.updateListener.of(update => {
-                    if (update.docChanged) { tab.dirty = update.state.doc.toString() !== tab.savedText; renderTabs(); }
+                    if (update.docChanged) { tab.dirty = !!tab.pendingChange || update.state.doc.toString() !== tab.savedText; renderTabs(); }
                     if (update.selectionSet) {
                         requestAnimationFrame(() => tab.positionComment?.());
                         const head = update.state.selection.main.head;
@@ -244,35 +219,25 @@ window.startWorkbench = send => {
                     }
                 })],
             });
-            const rail = element('div', 'editor-comment-rail');
-            const counts = element('div', 'editor-line-counts'); rail.append(counts);
-            const commentButton = element('button', 'annotation-trigger editor-line-comment'); commentButton.type = 'button'; commentButton.setAttribute('aria-label', 'Comment on code'); commentButton.innerHTML = annotations.glyph; commentButton.hidden = true;
-            rail.append(commentButton); tab.editorHost.append(rail);
             tab.positionComment = () => {
                 if (tab.closed || !tab.view) return;
                 const range = tab.view.state.selection.main;
-                const coords = tab.view.coordsAtPos(range.head);
-                const bounds = tab.editorHost.getBoundingClientRect();
-                commentButton.hidden = !coords || coords.top < bounds.top || coords.bottom > bounds.bottom;
-                if (coords) commentButton.style.top = `${Math.max(0, coords.top - bounds.top - 3)}px`;
-                counts.replaceChildren();
+                const coords = tab.view.coordsAtPos(range.head), bounds = tab.editorHost.getBoundingClientRect();
+                tab.commentTop = coords && coords.top >= bounds.top && coords.bottom <= bounds.bottom
+                    ? Math.max(0, coords.top - bounds.top - 3) : null;
                 const grouped = new Map();
-                annotations.comments.filter(item => item.source === path).forEach(item => { const line = tab.view.state.doc.lineAt(Math.min(item.from, tab.view.state.doc.length)); if (!grouped.has(line.from)) grouped.set(line.from, []); grouped.get(line.from).push(item); });
-                grouped.forEach((items, pos) => {
-                    const location = tab.view.coordsAtPos(pos); if (!location || location.top < bounds.top || location.bottom > bounds.bottom) return;
-                    const ids = items.map(item => item.id).join(', ');
-                    const badge = element('button', 'editor-line-count comment-badge'); badge.type = 'button'; badge.innerHTML = annotations.glyph; badge.append(element('span', '', ids)); badge.setAttribute('aria-label', `View code comments ${ids}`);
-                    badge.style.top = `${location.top - bounds.top - 3}px`; badge.onclick = () => annotations.list(tab.commentListRect(), items); counts.append(badge);
+                annotations.comments.filter(item => item.source === tab.path).forEach(item => {
+                    const line = tab.view.state.doc.lineAt(Math.min(item.from, tab.view.state.doc.length));
+                    if (!grouped.has(line.from)) grouped.set(line.from, []);
+                    grouped.get(line.from).push(item);
                 });
-            };
-            commentButton.onpointerdown = event => event.preventDefault();
-            commentButton.onclick = () => {
-                const selection = tab.view.state.selection.main;
-                const line = tab.view.state.doc.lineAt(selection.head);
-                const from = selection.empty ? line.from : selection.from;
-                const to = selection.empty ? line.to : selection.to;
-                const quote = tab.view.state.doc.sliceString(from, to) || `Line ${line.number} (empty)`;
-                annotations.begin({quote, source: path, from, to, lineFrom: tab.view.state.doc.lineAt(from).number, lineTo: tab.view.state.doc.lineAt(Math.max(from, to - 1)).number}, commentButton.getBoundingClientRect());
+                tab.markers = [];
+                grouped.forEach((items, pos) => {
+                    const location = tab.view.coordsAtPos(pos);
+                    if (location && location.top >= bounds.top && location.bottom <= bounds.bottom)
+                        tab.markers.push({top: location.top - bounds.top - 3, ids: items.map(item => item.id).join(', ')});
+                });
+                renderTabs();
             };
             const scroller = tab.view.scrollDOM;
             scroller.addEventListener('scroll', tab.positionComment);
@@ -283,69 +248,53 @@ window.startWorkbench = send => {
             });
             tab.commentCleanup = () => { unsubscribe(); scroller.removeEventListener('scroll', tab.positionComment); };
             if (tab.id === active) { selectedFile = file.path; send({ action: 'selected', path: file.path }); }
-            renderTabs(); if (tab.browser) renderExplorer(tab);
+            renderTabs();
             requestAnimationFrame(() => { tab.view.requestMeasure(); if (tab.id === active && visible) tab.view.focus(); });
             return tab;
         } catch (error) { report(error); }
-        finally { tab.loading = false; }
+        finally { tab.loading = false; renderTabs(); }
     }
-    function openFile(path) {
+    async function openFile(path, range) {
         const existing = tabs.find(tab => tab.path === path);
-        if (existing) { activate(existing); existing.view?.focus(); return; }
+        const reveal = tab => {
+            const view = tab.view;
+            if (!view) return;
+            if (tab.sourceFlashTimer) { clearTimeout(tab.sourceFlashTimer); tab.sourceFlashTimer = null; }
+            if (range?.start) {
+                const doc = view.state.doc;
+                const first = Math.min(doc.lines, Math.max(1, range.start));
+                const last = Math.min(doc.lines, Math.max(first, range.end || first));
+                const start = doc.line(first).from, end = doc.line(last).to;
+                const flash = Decoration.set(Array.from({length: last - first + 1}, (_, index) =>
+                    Decoration.line({class: 'cm-source-flash'}).range(doc.line(first + index).from)));
+                view.dispatch({
+                    selection: {anchor: start, head: end},
+                    effects: [EditorView.scrollIntoView(start, {y: 'center'}), sourceFlashEffect.of(flash)],
+                });
+                tab.sourceFlashTimer = setTimeout(() => {
+                    if (!tab.closed && tab.view === view)
+                        view.dispatch({effects: sourceFlashEffect.of(Decoration.none)});
+                    tab.sourceFlashTimer = null;
+                }, 500);
+            } else {
+                view.dispatch({effects: sourceFlashEffect.of(Decoration.none)});
+            }
+            view.focus();
+        };
+        if (existing) { activate(existing); reveal(existing); return; }
         let tab = tabs.find(tab => tab.id === active && tab.type === 'editor' && !tab.path && !tab.loading);
         if (!tab) { tab = createTab(); createEditor(tab, null); }
-        activate(tab); loadFile(tab, path);
-    }
-    async function renderExplorer(tab) {
-        tab.explorer.replaceChildren();
-        if (!root) { tab.explorer.append(element('p', 'explorer-empty', 'Open a project folder')); return; }
-        const filter = element('input', 'file-filter'); filter.placeholder = 'Filter files…'; filter.setAttribute('aria-label', 'Filter files');
-        filter.value = tab.filter || '';
-        const tree = element('div', 'file-tree'); tree.setAttribute('role', 'tree'); tab.explorer.append(filter, tree);
-        const applyFilter = () => {
-            const query = filter.value.toLowerCase(); tab.filter = filter.value;
-            for (const row of tree.querySelectorAll('.file-row')) row.hidden = row.dataset.directory !== 'true' && !row.dataset.label.toLowerCase().includes(query);
-        };
-        filter.oninput = applyFilter;
-        tab.expanded ||= new Set();
-        async function addFolder(parent, path, depth = 0) {
-            let entries;
-            try { entries = await rpc('list', { path }); }
-            catch (error) { parent.append(element('p', 'explorer-empty', error.message)); return; }
-            if (tab.closed || !parent.isConnected) return;
-            for (const entry of entries) {
-                const branch = element('div', 'file-branch'), row = element('button', 'file-row');
-                row.type = 'button'; row.style.paddingLeft = `${10 + depth * 12}px`;
-                row.dataset.label = entry.label; row.dataset.directory = String(entry.directory);
-                row.setAttribute('role', 'treeitem'); row.setAttribute('aria-label', entry.label);
-                row.append(icon(entry.directory ? 'chevron' : 'editor'), element('span', '', entry.label));
-                if (entry.path === tab.path) row.classList.add('current-file');
-                row.onmouseenter = () => hint(entry.path); row.onmouseleave = () => hint(null);
-                const children = element('div', 'file-children'); children.hidden = true;
-                row.onclick = async () => {
-                    if (!entry.directory) { openFile(entry.path); return; }
-                    if (!children.childElementCount) await addFolder(children, entry.path, depth + 1);
-                    children.hidden = !children.hidden; row.classList.toggle('expanded', !children.hidden);
-                    row.setAttribute('aria-expanded', String(!children.hidden));
-                    if (children.hidden) tab.expanded.delete(entry.path); else tab.expanded.add(entry.path);
-                    applyFilter();
-                };
-                branch.append(row, children); parent.append(branch);
-                if (entry.directory && tab.expanded.has(entry.path)) {
-                    await addFolder(children, entry.path, depth + 1); children.hidden = false; row.classList.add('expanded');
-                }
-            }
-            applyFilter();
-        }
-        await addFolder(tree, root);
+        activate(tab); await loadFile(tab, path); reveal(tab);
     }
     async function createTerminal(tab) {
-        tab.type = 'terminal'; tab.title = 'Terminal'; tab.body.replaceChildren();
-        const terminalHost = element('div', 'terminal-host'); tab.body.append(terminalHost);
+        tab.type = 'terminal'; tab.title = 'Terminal'; renderTabs();
+        const terminalHost = await mounted(`terminal-widget-${tab.id}`);
+        if (tab.closed) return;
+        tab.terminalHost = terminalHost;
         tab.terminal = new Terminal({
             fontFamily: 'Consolas, "Cascadia Code", monospace', fontSize: 12, lineHeight: 1.35,
             cursorBlink: true, scrollback: 5000,
-            theme: { background: '#fafafa', foreground: '#333333', cursor: '#555555', selectionBackground: '#dddddd' },
+            theme: terminalTheme(terminalHost),
         });
         tab.fit = new FitAddon(); tab.terminal.loadAddon(tab.fit); tab.terminal.open(terminalHost); renderTabs();
         // Subscribe before the first PTY bytes arrive: ConPTY asks xterm for its
@@ -360,7 +309,7 @@ window.startWorkbench = send => {
         } catch (error) { tab.terminal.write(`\r\n${error.message}\r\n`); report(error); }
     }
     function fitTerminal(tab) {
-        if (visible && tab?.type === 'terminal' && !tab.body.hidden && host.clientWidth > 0) {
+        if (visible && tab?.type === 'terminal' && tab.id === active && host.clientWidth > 0) {
             try { tab.fit?.fit(); } catch { /* Another layout frame will retry. */ }
         }
     }
@@ -369,17 +318,50 @@ window.startWorkbench = send => {
         for (const tab of tabs) if (tab.id === active) { tab.view?.requestMeasure(); fitTerminal(tab); }
     });
     resize.observe(host);
-    const refreshBrowser = setInterval(() => {
-        const tab = tabs.find(tab => tab.id === active);
-        if (visible && tab?.browser && !tab.explorer.contains(document.activeElement)) renderExplorer(tab);
-    }, 4000);
     window.dadoWorkbench = {
+        movedPath(from,to) {
+            const move=path=>path && (path===from || path.startsWith(from+'\\') || path.startsWith(from+'/')) ? to+path.slice(from.length) : path;
+            for(const tab of tabs) {const next=move(tab.path);if(next!==tab.path){tab.path=next;tab.title=next.split(/[\\/]/).pop();}}
+            selectedFile=move(selectedFile);
+            for(const item of window.dadoComments.comments) {
+                item.source=move(item.source);item.folder=move(item.folder);item.sceneFolder=move(item.sceneFolder);
+                if(item.source==='Systems')item.quote=item.quote.split(from).join(to);
+            }
+            window.dadoComments.changed();renderTabs();
+        },
+        command(action, id, value) {
+            const tab = tabs.find(tab => tab.id === id);
+            if (action === 'new') return newChoice();
+            if (action === 'dismiss') { notice = null; renderTabs(); return; }
+            if (!tab || tab.closed) return;
+            if (action === 'activate') return activate(tab);
+            if (action === 'close') return closeTab(tab);
+            if (action === 'discard') return removeTab(tab);
+            if (action === 'save-close') return save(tab).then(ok => {if (ok && !tab.dirty && !tab.closed) removeTab(tab);});
+            if (action === 'editor' && tab.type === 'choice') return createEditor(tab, selectedFile);
+            if (action === 'terminal' && tab.type === 'choice') return createTerminal(tab).catch(report);
+            if (action === 'pick') return pick(tab);
+            if (action === 'save') return save(tab);
+            if (action === 'browser') {tab.browser = !tab.browser; renderTabs(); requestAnimationFrame(() => tab.view?.requestMeasure()); return;}
+            if (action === 'comment-list') {
+                const ids = String(value).split(', ').map(Number);
+                return window.dadoComments.list(tab.commentListRect(), window.dadoComments.comments.filter(item => item.source === tab.path && ids.includes(item.id)));
+            }
+            if (action === 'comment' && tab.view) {
+                const selection = tab.view.state.selection.main, line = tab.view.state.doc.lineAt(selection.head);
+                const from = selection.empty ? line.from : selection.from, to = selection.empty ? line.to : selection.to;
+                const quote = tab.view.state.doc.sliceString(from, to) || `Line ${line.number} (empty)`;
+                window.dadoComments.begin({quote, source: tab.path, from, to, lineFrom: tab.view.state.doc.lineAt(from).number,
+                    lineTo: tab.view.state.doc.lineAt(Math.max(from, to - 1)).number},
+                    document.getElementById(`code-comment-${tab.id}`).getBoundingClientRect());
+            }
+        },
         async refreshFromDisk(expectedRoot) {
             const startRoot=root,{pathKey,normalizeText}=window.dadoReview;
             if(!root || pathKey(root)!==pathKey(expectedRoot))return;
             const prefix=pathKey(root).replace(/\/$/,'')+'/';
             for(const tab of tabs.filter(tab=>tab.type==='editor' && tab.path && tab.view && pathKey(tab.path).startsWith(prefix))) {
-                if(tab.closed || tab.loading || tab.saving || tab.agentLocked)continue;
+                if(tab.closed || tab.loading || tab.saving || tab.agentLocked || tab.pendingChange)continue;
                 const view=tab.view,doc=view.state.doc,path=tab.path,original=tab.original;
                 try {
                     const file=await rpc('read',{path});
@@ -397,9 +379,9 @@ window.startWorkbench = send => {
             }
         },
         agentContext() {
-            return {selectedFile,buffers:tabs.filter(tab=>tab.type==='editor' && tab.path && tab.view && !tab.loading).map(tab=>({path:tab.path,text:(tab.bom?'\ufeff':'')+tab.view.state.doc.toString().replace(/\n/g,tab.newline),original:tab.original}))};
+            return {selectedFile,buffers:tabs.filter(tab=>tab.type==='editor' && tab.path && tab.view && !tab.loading).map(tab=>({path:tab.path,text:(tab.bom?'\ufeff':'')+tab.view.state.doc.toString().replace(/\n/g,tab.newline),original:tab.original,exists:tab.pendingChange?.operation!=='create'}))};
         },
-        async applyProposal(review, expectedRoot) {
+        async applyProposal(review, expectedRoot, owner) {
             const {pathKey,normalizeText}=window.dadoReview;
             const startRoot=root, locked=new Set(), targets=[];
             const lock=tab=>{if(locked.has(tab))return;tab.agentLocked=true;tab.view.dispatch({effects:tab.agentLock.reconfigure(EditorState.readOnly.of(true))});locked.add(tab);};
@@ -411,16 +393,16 @@ window.startWorkbench = send => {
                 for(const file of review.changes) {
                     if(file.conflict) throw new Error(`${file.path} changed on disk. Resolve that conflict before applying.`);
                     const open=tabs.filter(tab=>tab.path && pathKey(tab.path)===pathKey(file.absolutePath));
-                    for(const tab of open) {if(!tab.view || tab.loading || tab.saving || tab.agentLocked) throw new Error(`${file.path} is busy.`);lock(tab);}
+                    for(const tab of open) {if(!tab.view || tab.loading || tab.saving || tab.agentLocked || tab.pendingChange) throw new Error(`${file.path} is busy.`);lock(tab);}
                     targets.push({file,open});
                 }
                 // Check every disk baseline before changing any editor. Never save here.
                 for(const {file,open} of targets) {
-                    const disk=await rpc('read',{path:file.absolutePath});
-                    if(disk.text!==file.diskBefore) throw new Error(`${file.path} changed on disk after review.`);
+                    const disk=await rpc('read_state',{path:file.absolutePath});
+                    if((disk.exists===false?null:disk.text)!==file.diskBefore) throw new Error(`${file.path} changed on disk after review.`);
                     if(!open.length) {
                         const tab=createTab();createEditor(tab,null);
-                        if(!await loadFile(tab,file.absolutePath)) throw new Error(`Could not open ${file.path}.`);
+                        if(!await loadFile(tab,file.absolutePath,file.operation==='create'?{path:file.absolutePath,text:'',exists:false}:null)) throw new Error(`Could not open ${file.path}.`);
                         lock(tab);open.push(tab);
                     }
                     for(const tab of open) if(bufferText(tab)!==file.before || tab.original!==file.diskBefore) throw new Error(`${file.path} has editor changes outside this proposal. Your text was preserved.`);
@@ -429,17 +411,29 @@ window.startWorkbench = send => {
                 for(const {file,open} of targets) for(const tab of open) {
                     if(tab.closed || bufferText(tab)!==file.before) throw new Error(`${file.path} changed before applying.`);
                 }
-                for(const {file,open} of targets) for(const tab of open) tab.view.dispatch({changes:{from:0,to:tab.view.state.doc.length,insert:normalizeText(file.after)},userEvent:'input.agent'});
+                for(const {file,open} of targets) for(const tab of open) {
+                    if(file.operation==='create' || file.operation==='delete') {
+                        tab.pendingChange={...owner,path:file.path,revision:file.revision,operation:file.operation};
+                        tab.dirty=true;
+                    }
+                    if(file.operation!=='delete') {
+                        if(file.operation==='create'){tab.bom=file.after.startsWith('\ufeff');tab.newline=file.after.includes('\r\n')?'\r\n':'\n';}
+                        tab.view.dispatch({changes:{from:0,to:tab.view.state.doc.length,insert:normalizeText(file.after)},userEvent:'input.agent'});
+                    }
+                }
+                renderTabs();
                 activate(targets[0].open[0]);
                 hint('Applied to editors · Save to write the files');
             } finally {
-                for(const tab of locked) {tab.agentLocked=false;if(!tab.closed && tab.view) tab.view.dispatch({effects:tab.agentLock.reconfigure(EditorState.readOnly.of(false))});}
+                for(const tab of locked) {tab.agentLocked=false;if(!tab.closed && tab.view) tab.view.dispatch({effects:tab.agentLock.reconfigure(EditorState.readOnly.of(tab.pendingChange?.operation==='delete'))});}
+                renderTabs();
             }
         },
         openFile,
         editCommand(command, target) {
             const view = target?.closest?.('.cm-editor') && EditorView.findFromDOM(target.closest('.cm-editor'));
             if (!view) return false;
+            if (view.state.readOnly && !['copy', 'selectAll'].includes(command)) return true;
             view.focus();
             const commands = { undo, redo, selectAll, delete: deleteCharForward };
             if (commands[command]) { commands[command](view); return true; }
@@ -466,7 +460,7 @@ window.startWorkbench = send => {
             const tab = tabs.find(tab => tab.id === active);
             if (path && tab?.type === 'editor' && !tab.path && !tab.loading) loadFile(tab, path);
         },
-        setRoot(path) { root = path; const tab = tabs.find(tab => tab.id === active); if (tab?.browser) renderExplorer(tab); },
+        setRoot(path) { root = path; },
         setVisible(shown) {
             if (shown !== visible) document.dispatchEvent(new CustomEvent('dado-settings-change',{detail:{rightPanel:shown}}));
             visible = shown; host.setAttribute('aria-hidden', String(!shown));
@@ -483,9 +477,9 @@ window.startWorkbench = send => {
         },
         dispose() {
             if (disposed) return; disposed = true;
-            resize.disconnect(); clearInterval(refreshBrowser); if (hintTimer) clearTimeout(hintTimer);
+            resize.disconnect(); document.removeEventListener('dado-appearance-change', updateTerminalThemes); if (hintTimer) clearTimeout(hintTimer);
             for (const tab of tabs) { tab.closed = true; tab.commentCleanup?.(); tab.view?.destroy(); tab.terminal?.dispose(); }
-            host.replaceChildren();
+
         },
     };
     send({ action: 'ready' });

@@ -1,0 +1,9 @@
+{
+  "runtimeVersion": "0.162.0-alpha.2",
+  "schemaCommand": "codex app-server generate-json-schema",
+  "items": [
+    {"type":"mcpToolCall","id":"m","server":"local","tool":"inspect","status":"completed","arguments":{"token":"SECRET"},"error":{"message":"SECRET"}},
+    {"type":"webSearch","id":"w","query":"documentation","action":null},
+    {"type":"collabAgentToolCall","id":"c","tool":"spawnAgent","status":"completed","senderThreadId":"lead","receiverThreadIds":["child"],"agentsStates":{"child":{"status":"running"}}}
+  ]
+}

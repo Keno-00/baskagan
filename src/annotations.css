@@ -1,0 +1,68 @@
+.annotation-summary-anchor { width: 142px; height: 30px; flex-shrink: 0; }
+.annotation-summary-anchor[hidden] { display:none; }
+.annotation-marker-anchor { display:inline-block; vertical-align:super; width:24px; height:21px; margin-left:3px; }
+.chat-context-row:has(#pending-annotations[hidden]):has(#pending-ideas[hidden]):has(.chat-attachments[hidden]) { display:none; }
+#annotation-ui { display:contents; font-family:var(--ui-font); font-size:var(--ui-text); }
+#annotation-ui .annotation-floating {position:fixed;z-index:35;display:inline-flex;align-items:center;gap:2px;}
+#annotation-ui button {display:inline-flex;align-items:center;justify-content:center;gap:6px;height:var(--ui-control);padding:0 8px;margin:0;border-radius:var(--ui-radius);font:inherit;line-height:1;color:inherit;}
+#annotation-ui svg {display:block;width:var(--ui-icon);height:var(--ui-icon);fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+#annotation-ui button:focus-visible,#annotation-ui textarea:focus-visible {outline:2px solid var(--ui-focus);outline-offset:-2px;}
+#annotation-ui button:disabled {opacity:.4;cursor:default;}
+#annotation-ui .comment-badge {background:var(--ui-panel-control);color:var(--ui-panel-foreground);font-size:var(--ui-text-small);}
+#annotation-ui .comment-badge:hover {background:var(--ui-panel-hover);}
+#annotation-ui .annotation-clear {width:24px;height:24px;padding:0;background:transparent;color:var(--ui-muted);opacity:0;}
+#annotation-ui .annotation-summary-control:hover .annotation-clear,#annotation-ui .annotation-summary-control:focus-within .annotation-clear {opacity:1;}
+#annotation-ui .comment-marker {height:21px;min-width:21px;padding:0 5px;background:var(--ui-accent);color:var(--ui-on-accent);font-size:10px;border-radius:8px 8px 8px 2px;}
+#annotation-ui .annotation-trigger {position:fixed;z-index:40;width:30px;padding:0;color:var(--ui-foreground);}
+#annotation-ui .annotation-popup {padding:12px;border-radius:12px;background:var(--ui-panel-base);color:var(--ui-panel-foreground);font-size:var(--ui-text);}
+#annotation-ui .annotation-quote {font-size:var(--ui-text-small);max-height:80px;}
+#annotation-ui .annotation-input {min-height:60px;margin-top:8px;padding:8px;border-radius:var(--ui-radius);font:inherit;}
+#annotation-ui .annotation-actions {margin-top:8px;gap:4px;}
+#annotation-ui .annotation-action {background:transparent;min-width:30px;}
+#annotation-ui .annotation-action:hover {background:var(--ui-panel-hover);}
+#annotation-ui .annotation-confirm {background:var(--ui-accent);color:var(--ui-on-accent);}
+#annotation-ui .annotation-list-header {display:flex;align-items:center;justify-content:space-between;color:var(--ui-panel-foreground);font-size:var(--ui-text-small);}
+#annotation-ui .annotation-entry {padding:10px 66px 10px 0;border:0;}
+#annotation-ui .annotation-comment {padding-top:4px;font-style:normal;font-size:var(--ui-text);}
+#annotation-ui .annotation-entry-actions {position:absolute;top:8px;right:0;display:flex;gap:2px;opacity:0;}
+#annotation-ui .annotation-entry:hover .annotation-entry-actions,#annotation-ui .annotation-entry:focus-within .annotation-entry-actions {opacity:1;}
+#annotation-ui .annotation-edit-icon,#annotation-ui .annotation-delete-icon {position:static;width:28px;height:28px;padding:0;opacity:1;background:transparent;}
+#annotation-ui .annotation-entry-actions button:hover {background:var(--ui-panel-hover);}
+#annotation-ui .annotation-marker:hover .comment-preview,#annotation-ui .annotation-marker:focus-within .comment-preview {display:block;}
+#annotation-ui .comment-preview {position:absolute;top:24px;left:0;max-width:260px;background:var(--ui-panel-base);color:var(--ui-panel-foreground);padding:8px;border-radius:8px;font-size:var(--ui-text-small);white-space:pre-wrap;}
+
+.chat-user-message > .annotation-summary-anchor {width:112px;margin-left:auto;}
+.chat-user-message > .annotation-summary-anchor:has(+ .chat-user-bubble) {margin-bottom:8px;}
+#annotation-ui .annotation-sent-summary {width:112px;}
+#annotation-ui .annotation-sent-summary .comment-badge {width:100%;background:var(--ui-panel-base);color:var(--ui-panel-foreground);border-radius:16px;}
+#annotation-ui .annotation-sent-summary .comment-badge:hover {background:var(--ui-panel-hover);}
+
+.message-context-summaries {display:flex;justify-content:flex-end;gap:var(--ui-gap);margin-left:auto;margin-bottom:var(--ui-space);}
+.message-context-summaries .annotation-summary-anchor {width:128px;}
+#annotation-ui .annotation-sent-summary:has(button[aria-label^="View ideas"]) {width:128px;}
+
+.chat-user-message > .sent-ideas {width:128px;}
+
+/* Counts share one compact shape; the overlapping circle identifies the context type. */
+#annotation-ui .annotation-count-bubble {position:relative;min-width:30px;height:30px;padding:0 8px;border-radius:50%;background:var(--ui-panel-base);color:var(--ui-panel-foreground);font-size:var(--ui-text-small);font-variant-numeric:tabular-nums;}
+#annotation-ui .annotation-count-bubble:hover {background:var(--ui-panel-hover);}
+#annotation-ui .annotation-count-bubble > svg {position:absolute;left:-5px;top:-5px;width:16px;height:16px;box-sizing:border-box;padding:3px;border-radius:50%;background:var(--ui-panel-base);color:var(--ui-panel-foreground);stroke-width:1.8;pointer-events:none;}
+#annotation-ui .annotation-sent-summary .annotation-count-bubble {width:auto;border-radius:50%;}
+.message-context-summaries {gap:12px;}
+.chat-context-row .annotation-summary-anchor {margin-left:0;}
+#annotation-ui .annotation-summary-control {gap:6px;}
+
+.chat-context-row .annotation-summary-anchor {display:inline-flex;align-items:center;gap:6px;width:max-content;padding:0 8px;visibility:hidden;font:var(--ui-text-small) var(--ui-font);white-space:nowrap;}
+.chat-context-row .annotation-summary-anchor svg {width:var(--ui-icon);height:var(--ui-icon);flex-shrink:0;}
+#annotation-ui .annotation-summary-control:has(.annotation-clear) {gap:0;}
+#annotation-ui .annotation-summary-control .annotation-clear {position:absolute;left:4px;top:3px;width:20px;height:24px;pointer-events:none;}
+#annotation-ui .annotation-summary-control:hover .annotation-clear,#annotation-ui .annotation-summary-control:focus-within .annotation-clear {pointer-events:auto;}
+#annotation-ui .annotation-summary-control:has(.annotation-clear):hover .comment-badge > svg,#annotation-ui .annotation-summary-control:has(.annotation-clear):focus-within .comment-badge > svg {opacity:0;}
+.chat-context-row {gap:var(--ui-gap);}
+
+/* Sent summaries are ordinary message content, not tracked floating overlays. */
+.chat-user-message > .annotation-summary-anchor,.message-context-summaries .annotation-summary-anchor,.chat-user-message > .sent-ideas {width:auto;height:auto;flex-shrink:0;}
+.message-context-summaries {gap:var(--ui-gap);margin-bottom:var(--ui-space);}
+.sent-context-badge {display:inline-flex;align-items:center;justify-content:center;gap:6px;height:var(--ui-control);padding:0 var(--ui-space);border-radius:var(--ui-radius);font:var(--ui-text-small) var(--ui-font);line-height:1;white-space:nowrap;background:var(--ui-panel-base);color:var(--ui-panel-foreground);}
+.sent-context-badge svg {display:block;width:var(--ui-icon);height:var(--ui-icon);fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+.sent-context-badge:hover {background:var(--ui-panel-hover);}

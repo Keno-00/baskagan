@@ -14,6 +14,7 @@ assert.equal(applicationIssue({changes:[{conflict:false}]}),null);
 assert.match(applicationIssue({changes:[{operation:'create'}]}),/not available yet/);
 assert.match(applicationIssue({changes:[{operation:'delete'}]}),/live files are unchanged/);
 assert.match(applicationIssue({changes:[{operation:'modify',conflict:true}]}),/conflict/);
+assert.equal(applicationIssue({structuralSaveAvailable:true,changes:[{operation:'create'},{operation:'delete'}]}),null);
 assert.deepEqual(diff('','new','create'),[{kind:'add',newLine:1,text:'new'}]);
 assert.deepEqual(diff('gone','','delete'),[{kind:'remove',oldLine:1,text:'gone'}]);
 assert.deepEqual(diff('','','create'),[]);

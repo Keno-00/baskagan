@@ -1,0 +1,39 @@
+.constellation {--concept-inspector-width:min(280px,36%)}
+/* Reserve the inspector lane across concept hovers so the scene never jumps. */
+.project-model:not([hidden]) ~ .graph {width:calc(100% - var(--concept-inspector-width))}
+.project-model {z-index:2;position:absolute;inset:0;pointer-events:none;overflow:hidden;color:var(--ui-on-primary);font:var(--ui-text) var(--ui-font)}
+.project-model[hidden] {display:none}
+.concept-edge {stroke:currentColor;opacity:.3;stroke-width:1.5;fill:none}
+.concept-edge.relationship {opacity:.6}
+.concept-edge.uncertain {stroke-dasharray:4 5}
+.concept-detail {pointer-events:auto;position:absolute;top:calc(var(--ui-control) + 2 * var(--ui-space));right:var(--ui-space);bottom:var(--ui-space);width:calc(var(--concept-inspector-width) - 2 * var(--ui-space));box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;background:var(--ui-panel-base);color:var(--ui-panel-foreground);border-radius:var(--ui-radius);padding:var(--ui-space);font:var(--ui-text) var(--ui-font)}
+.concept-detail-actions {display:flex;justify-content:flex-end;flex-wrap:wrap;flex-shrink:0;gap:var(--ui-gap)}
+.concept-detail-actions .ui-icon-button {width:var(--ui-control-small);height:var(--ui-control-small)}
+.concept-detail-actions .ui-icon-button svg {width:var(--ui-icon-small);height:var(--ui-icon-small)}
+.concept-detail-content {min-height:0;overflow:auto;overflow-wrap:anywhere;scrollbar-gutter:stable}
+
+.concept-description {white-space:pre-wrap;line-height:1.6;user-select:text;margin:var(--ui-space) 0}
+::highlight(concept-notes) {background:var(--ui-panel-hover);color:var(--ui-panel-foreground)}
+.concept-sources {display:flex;flex-wrap:wrap;gap:var(--ui-gap);padding-top:var(--ui-space);border-top:1px solid var(--ui-panel-hover)}
+.concept-sources button,.model-status {pointer-events:auto;background:transparent;color:inherit;border:0;text-align:left;font:inherit;border-radius:var(--ui-radius);padding:var(--ui-space);cursor:pointer;overflow-wrap:anywhere}
+.concept-sources button:hover {background:var(--ui-panel-hover)}
+.model-status {pointer-events:auto;position:absolute;bottom:var(--ui-space);left:var(--ui-space);font-size:var(--ui-text-small)}
+.icon-controls .icon-button[aria-pressed=true] {background:var(--ui-primary-hover);color:var(--ui-on-primary)}
+.icon-controls .icon-button[hidden] {display:none}
+
+.project-model .canvas-message {pointer-events:auto}
+#scene-nodes .concept-node text {font:var(--ui-text) var(--ui-font)}
+
+.insight-name {font-weight:600;line-height:1.5;margin:var(--ui-space) 0}
+#scene-nodes > g {transition:opacity .2s ease}
+:root[data-reduced-motion=true] #scene-nodes > g {transition:none}
+@media(prefers-reduced-motion:reduce){#scene-nodes > g {transition:none}}
+
+.concept-detail-content {scrollbar-width:thin;scrollbar-color:var(--ui-panel-hover) transparent}
+
+@keyframes relationship-lock {0%,100%{opacity:1}45%{opacity:.45}}
+@keyframes relationship-text-flash {0%,100%{background:transparent}25%,65%{background:var(--ui-panel-hover)}}
+#folder-scene[data-hold-pinned=true] #scene-edges {animation:relationship-lock .55s ease}
+.relationship-text-flash {animation:relationship-text-flash .5s ease;border-radius:var(--ui-radius)}
+:root[data-reduced-motion=true] #folder-scene #scene-edges,:root[data-reduced-motion=true] .relationship-text-flash {animation:none}
+@media(prefers-reduced-motion:reduce){:root:not([data-respect-reduced-motion=false]) #folder-scene #scene-edges,:root:not([data-respect-reduced-motion=false]) .relationship-text-flash{animation:none}}

@@ -19,6 +19,7 @@ struct Request {
     expected: Option<String>,
     cols: Option<u16>,
     rows: Option<u16>,
+    state: Option<crate::workbench_ui::PanelState>,
 }
 
 fn reply(id: Option<u64>, result: Result<Value, String>) {
@@ -67,7 +68,7 @@ fn save_file(path: &Path, text: &str, expected: &str) -> Result<Value, String> {
     Ok(json!({"path": path}))
 }
 
-fn list_folder(path: &Path) -> Result<Value, String> {
+pub(crate) fn list_folder(path: &Path) -> Result<Value, String> {
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -91,6 +92,7 @@ pub fn SidePanel(root: Option<PathBuf>) -> Element {
     let mut workbench = use_context::<Workbench>();
     let mut status = use_context::<Status>();
     let mut ready = use_signal(|| false);
+    let mut ui = use_signal(crate::workbench_ui::PanelState::default);
     let terminals = use_hook(|| Arc::new(Mutex::new(Terminals::default())));
     let (output, input) = use_hook(|| {
         let (sender, receiver) = mpsc::sync_channel::<(u64, Vec<u8>)>(512);
@@ -130,14 +132,28 @@ pub fn SidePanel(root: Option<PathBuf>) -> Element {
             while let Ok(request) = bridge.recv::<Request>().await {
                 let id = request.id;
                 match request.action.as_str() {
+                    "ui" => {
+                        if let Some(next) = request.state
+                            && *ui.peek() != next
+                        {
+                            ui.set(next);
+                        }
+                    }
                     "ready" => ready.set(true),
                     "hint" => status.hint.set(request.text),
                     "selected" => workbench.selected_file.set(request.path),
-                    "read" | "save" | "list" => {
+                    "read" | "read_state" | "save" | "list" => {
                         let result = tokio::task::spawn_blocking(move || {
                             let path = request.path.ok_or("No file selected")?;
                             match request.action.as_str() {
                                 "read" => read_file(&path),
+                                "read_state" => match std::fs::symlink_metadata(&path) {
+                                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                        Ok(json!({"exists":false}))
+                                    }
+                                    Err(e) => Err(e.to_string()),
+                                    Ok(_) => read_file(&path),
+                                },
                                 "save" => save_file(
                                     &path,
                                     request.text.as_deref().ok_or("No content")?,
@@ -224,7 +240,7 @@ pub fn SidePanel(root: Option<PathBuf>) -> Element {
         }
     });
     rsx! { aside { id: "side-panel", class: "side-panel", aria_label: "Editor and terminal panel",
-        div { id: "workbench-host" }
+        div { id: "workbench-host", crate::workbench_ui::PanelContents { state: ui, root } }
     } }
 }
 

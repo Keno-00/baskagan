@@ -14,7 +14,8 @@
     }
     function applicationIssue(review) {
         if(review.changes?.some(file=>file.conflict))return 'A file changed on disk. Resolve the conflict before applying.';
-        if(review.changes?.some(file=>file.operation && file.operation!=='modify'))return 'Additions and deletions can be reviewed; applying them is not available yet. The live files are unchanged.';
+        if(review.changes?.some(file=>file.operation && !['modify','create','delete'].includes(file.operation)))return 'This file operation is not supported.';
+        if(review.structuralSaveAvailable!==true && review.changes?.some(file=>file.operation && file.operation!=='modify'))return 'Additions and deletions can be reviewed; applying them is not available yet. The live files are unchanged.';
         return null;
     }
     function diff(before,after,operation='modify') {

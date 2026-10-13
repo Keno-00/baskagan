@@ -1,0 +1,217 @@
+:root {
+    /* Hue is the theme seed; each semantic role takes only the chroma it needs. */
+    --ui-theme-hue: 218deg;
+    --ui-theme-saturation: 100%;
+    --ui-theme-primary-saturation: calc(var(--ui-theme-saturation) * 0.04);
+    --ui-theme-secondary-saturation: calc(var(--ui-theme-saturation) * 0.05);
+    --ui-theme-control-saturation: calc(var(--ui-theme-saturation) * 0.08);
+    --ui-theme-selected-saturation: calc(var(--ui-theme-saturation) * 0.12);
+    --ui-theme-foreground-saturation: calc(var(--ui-theme-saturation) * 0.02);
+    --ui-theme-muted-saturation: calc(var(--ui-theme-saturation) * 0.04);
+    --ui-theme-accent-saturation: calc(var(--ui-theme-saturation) * 0.35);
+    --ui-theme-primary-lightness: 100%;
+    --ui-theme-secondary-lightness: 97%;
+    --ui-theme-accent-lightness: 38%;
+    --ui-theme-on-primary-lightness: 20%;
+    --ui-theme-on-secondary-lightness: 22%;
+    --ui-theme-on-accent-lightness: 100%;
+    --ui-theme-primary-content-lightness: 99%;
+    --ui-theme-primary-control-lightness: 97.5%;
+    --ui-theme-primary-hover-lightness: 99%;
+    --ui-theme-primary-selected-lightness: 96.5%;
+    --ui-theme-accent-hover-lightness: 44%;
+    --ui-theme-panel-content-delta: -0.5%;
+    --ui-theme-panel-control-delta: -1.5%;
+    --ui-theme-panel-hover-delta: 0.5%;
+    --ui-theme-panel-selected-delta: -2.5%;
+    --ui-theme-diff-surface-lightness: 90%;
+    --ui-theme-muted-lightness: 45%;
+    --ui-theme-panel-muted-lightness: 45%;
+    --ui-theme-scene-ink-lightness: 18%;
+    --ui-danger-hue: 4deg;
+    --ui-danger-saturation: 64%;
+    --ui-danger-lightness: 42%;
+    --ui-warning-hue: 32deg;
+    --ui-warning-saturation: 66%;
+    --ui-warning-lightness: 45%;
+    --ui-success-hue: 145deg;
+    --ui-success-saturation: 32%;
+    --ui-success-lightness: 38%;
+    --ui-primary: hsl(var(--ui-theme-hue) var(--ui-theme-primary-saturation) var(--ui-theme-primary-lightness));
+    --ui-secondary: hsl(var(--ui-theme-hue) var(--ui-theme-secondary-saturation) var(--ui-theme-secondary-lightness));
+    --ui-accent: hsl(var(--ui-theme-hue) var(--ui-theme-accent-saturation) var(--ui-theme-accent-lightness));
+    --ui-on-primary: hsl(var(--ui-theme-hue) var(--ui-theme-foreground-saturation) var(--ui-theme-on-primary-lightness));
+    --ui-on-secondary: hsl(var(--ui-theme-hue) var(--ui-theme-foreground-saturation) var(--ui-theme-on-secondary-lightness));
+    --ui-on-accent: hsl(var(--ui-theme-hue) var(--ui-theme-foreground-saturation) var(--ui-theme-on-accent-lightness));
+    --ui-panel-saturation: var(--ui-theme-secondary-saturation);
+    --ui-panel-lightness: var(--ui-theme-secondary-lightness);
+    --ui-panel-content-delta: var(--ui-theme-panel-content-delta);
+    --ui-panel-control-delta: var(--ui-theme-panel-control-delta);
+    --ui-panel-hover-delta: var(--ui-theme-panel-hover-delta);
+    --ui-panel-selected-delta: var(--ui-theme-panel-selected-delta);
+    --ui-panel-base: hsl(var(--ui-theme-hue) var(--ui-panel-saturation) var(--ui-panel-lightness));
+    --ui-panel-foreground: var(--ui-on-secondary);
+    --ui-panel-content: hsl(var(--ui-theme-hue) var(--ui-panel-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-content-delta)));
+    --ui-panel-control: hsl(var(--ui-theme-hue) var(--ui-theme-control-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-control-delta)));
+    --ui-panel-hover: hsl(var(--ui-theme-hue) var(--ui-theme-control-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-hover-delta)));
+    --ui-panel-selected: hsl(var(--ui-theme-hue) var(--ui-theme-selected-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-selected-delta)));
+    --ui-muted: hsl(var(--ui-theme-hue) var(--ui-theme-muted-saturation) var(--ui-theme-panel-muted-lightness));
+    --ui-panel-diff-add: hsl(var(--ui-success-hue) var(--ui-success-saturation) var(--ui-theme-diff-surface-lightness));
+    --ui-panel-diff-remove: hsl(var(--ui-danger-hue) var(--ui-danger-saturation) var(--ui-theme-diff-surface-lightness));
+    --ui-danger: hsl(var(--ui-danger-hue) var(--ui-danger-saturation) var(--ui-danger-lightness));
+    --ui-warning: hsl(var(--ui-warning-hue) var(--ui-warning-saturation) var(--ui-warning-lightness));
+    --ui-success: hsl(var(--ui-success-hue) var(--ui-success-saturation) var(--ui-success-lightness));
+    --ui-scrim: rgb(0 0 0 / 32%);
+    --ui-diff-add: hsl(var(--ui-success-hue) var(--ui-success-saturation) var(--ui-theme-diff-surface-lightness));
+    --ui-diff-remove: hsl(var(--ui-danger-hue) var(--ui-danger-saturation) var(--ui-theme-diff-surface-lightness));
+    --ui-primary-content: hsl(var(--ui-theme-hue) var(--ui-theme-primary-saturation) var(--ui-theme-primary-content-lightness));
+    --ui-primary-control: hsl(var(--ui-theme-hue) var(--ui-theme-control-saturation) var(--ui-theme-primary-control-lightness));
+    --ui-primary-hover: hsl(var(--ui-theme-hue) var(--ui-theme-control-saturation) var(--ui-theme-primary-hover-lightness));
+    --ui-primary-selected: hsl(var(--ui-theme-hue) var(--ui-theme-selected-saturation) var(--ui-theme-primary-selected-lightness));
+    --ui-accent-hover: hsl(var(--ui-theme-hue) var(--ui-theme-accent-saturation) var(--ui-theme-accent-hover-lightness));
+    --ui-selection: hsla(var(--ui-theme-hue), var(--ui-theme-accent-saturation), var(--ui-theme-accent-lightness), .1);
+    --ui-scene-ink: hsl(var(--ui-theme-hue) var(--ui-theme-primary-saturation) var(--ui-theme-scene-ink-lightness));
+    --ui-font: "Segoe UI", sans-serif;
+    --ui-text: 12px;
+    --ui-text-small: 11px;
+    --ui-control: 30px;
+    --ui-control-small: 24px;
+    --ui-icon: 16px;
+    --ui-icon-small: 14px;
+    --ui-gap: 4px;
+    --ui-radius: 8px;
+    --ui-space: 8px;
+    --ui-foreground: var(--ui-on-primary);
+    --ui-muted: hsl(var(--ui-theme-hue) var(--ui-theme-muted-saturation) var(--ui-theme-muted-lightness));
+    --ui-hover: var(--ui-primary-hover);
+    --ui-focus: var(--ui-accent);
+}
+
+:is(#left-sidebar, .settings-nav, .side-panel, #workbench-host, .chat-composer,
+    .concept-detail, .annotation-popup, .chat-action-menu, .model-select-list,
+    .permission-select-list, .skill-creator, .systems-menu, .systems-dialog,
+    .chat-change-review, .chat-inline-review, .file-menu, .sidebar-popup,
+    .activity-tools, .chat-command-approval, .review-file,
+    .title-menu, .about-dialog, .comment-preview, .attachment-card,
+    .annotation-sent-summary, .annotation-count-bubble, .sent-context-badge) {
+    --ui-panel-base: var(--ui-secondary);
+    --ui-panel-foreground: var(--ui-on-secondary);
+    --ui-panel-saturation: var(--ui-theme-secondary-saturation);
+    --ui-panel-lightness: var(--ui-theme-secondary-lightness);
+    --ui-panel-content-delta: var(--ui-theme-panel-content-delta);
+    --ui-panel-control-delta: var(--ui-theme-panel-control-delta);
+    --ui-panel-hover-delta: var(--ui-theme-panel-hover-delta);
+    --ui-panel-selected-delta: var(--ui-theme-panel-selected-delta);
+    --ui-panel-base: hsl(var(--ui-theme-hue) var(--ui-panel-saturation) var(--ui-panel-lightness));
+    --ui-panel-content: hsl(var(--ui-theme-hue) var(--ui-panel-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-content-delta)));
+    --ui-panel-control: hsl(var(--ui-theme-hue) var(--ui-theme-control-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-control-delta)));
+    --ui-panel-hover: hsl(var(--ui-theme-hue) var(--ui-theme-control-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-hover-delta)));
+    --ui-panel-selected: hsl(var(--ui-theme-hue) var(--ui-theme-selected-saturation) calc(var(--ui-panel-lightness) + var(--ui-panel-selected-delta)));
+    --ui-panel-diff-add: hsl(var(--ui-success-hue) var(--ui-success-saturation) var(--ui-theme-diff-surface-lightness));
+    --ui-panel-diff-remove: hsl(var(--ui-danger-hue) var(--ui-danger-saturation) var(--ui-theme-diff-surface-lightness));
+}
+
+#chat-host, #settings-host, .title-bar {
+    --ui-panel-saturation: var(--ui-theme-primary-saturation);
+    --ui-panel-lightness: var(--ui-theme-primary-lightness);
+    --ui-panel-base: var(--ui-primary);
+    --ui-panel-foreground: var(--ui-on-primary);
+    --ui-panel-content: var(--ui-primary-content);
+    --ui-panel-control: var(--ui-primary-control);
+    --ui-panel-hover: var(--ui-primary-hover);
+    --ui-panel-selected: var(--ui-primary-selected);
+}
+
+#workbench-host {
+    --ui-workbench-chrome: var(--ui-panel-base);
+    --ui-workbench-content: var(--ui-panel-content);
+    --ui-workbench-control: var(--ui-panel-control);
+    --ui-workbench-hover: var(--ui-panel-hover);
+    --ui-workbench-foreground: var(--ui-panel-foreground);
+}
+
+#workbench-host .terminal-host {
+    background-color: var(--ui-workbench-content) !important;
+    color: var(--ui-workbench-foreground) !important;
+}
+#workbench-host .terminal-host .xterm,
+#workbench-host .terminal-host .xterm .xterm-viewport {
+    background-color: var(--ui-workbench-content) !important;
+}
+#workbench-host .editor-widget,
+#workbench-host .editor-widget .cm-editor,
+#workbench-host .editor-widget .cm-editor .cm-scroller,
+#workbench-host .editor-widget .cm-editor .cm-gutters {
+    background-color: var(--ui-workbench-content) !important;
+    color: var(--ui-workbench-foreground);
+}
+
+.ui-icon-button {display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:var(--ui-control);height:var(--ui-control);padding:0;border:0;border-radius:var(--ui-radius);background:transparent;color:inherit;cursor:pointer}
+.ui-icon-button svg {display:block;width:var(--ui-icon);height:var(--ui-icon);fill:none;stroke:currentColor;stroke-width:1.6}
+.ui-icon-button:hover {background:var(--ui-panel-hover)}
+.ui-icon-button:focus-visible {outline:2px solid currentColor;outline-offset:-2px}
+
+#workbench-host button, #workbench-host input {
+    font-family: var(--ui-font);
+    font-size: var(--ui-text);
+    border-radius: var(--ui-radius);
+}
+#workbench-host svg { display: block; width: var(--ui-icon); height: var(--ui-icon); }
+#workbench-host .workbench-icon {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: var(--ui-control);
+    height: var(--ui-control);
+    padding: 0;
+    margin: 0;
+    line-height: 1;
+    color: var(--ui-muted);
+}
+#workbench-host button:focus-visible, #workbench-host input:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: -2px;
+}
+#workbench-host button:disabled { opacity: .4; cursor: default; }
+#workbench-host button:disabled:hover { background: transparent; }
+#workbench-host .panel-tab .workbench-icon {
+    width: var(--ui-control-small);
+    height: var(--ui-control-small);
+    margin-right: var(--ui-gap);
+}
+#workbench-host .panel-tab .workbench-icon svg { width: var(--ui-icon-small); height: var(--ui-icon-small); }
+#workbench-host .panel-tab > .workbench-icon { opacity: 0; }
+#workbench-host .panel-tab.active > .workbench-icon,
+#workbench-host .panel-tab:hover > .workbench-icon,
+#workbench-host .panel-tab:focus-within > .workbench-icon { opacity: 1; }
+#workbench-host .tab-bar { gap: var(--ui-gap); padding: var(--ui-space); }
+#workbench-host .tab-title { height: 32px; padding: 0 var(--ui-space); gap: 6px; }
+#workbench-host .tab-list { padding: 2px 0; }
+#workbench-host .tab-chooser { padding: 16px 20px; }
+#workbench-host .type-button {
+    min-height: 40px;
+    padding: 10px 14px;
+    gap: var(--ui-space);
+    color: var(--ui-foreground);
+}
+#workbench-host .editor-toolbar { gap: var(--ui-gap); padding: 0 var(--ui-space); }
+#workbench-host .editor-caption, #workbench-host .file-row, #workbench-host .file-filter,
+#workbench-host .workbench-text { font-size: var(--ui-text-small); }
+#workbench-host .editor-widget { height: 100%; min-width: 0; overflow: hidden; }
+#workbench-host .file-filter { width: 100%; }
+#workbench-host .file-row { min-height: 28px; gap: 6px; }
+#workbench-host .file-row svg { width: 12px; height: 12px; }
+#workbench-host .workbench-text { min-height: 28px; padding: 4px var(--ui-space); color: var(--ui-workbench-foreground); background: var(--ui-workbench-control); }
+#workbench-host .workbench-text:hover { background: var(--ui-workbench-hover); }
+#workbench-host .editor-line-count { width: auto; height: 20px; padding: 2px 3px; gap: 2px; font-size: 10px; }
+#workbench-host .editor-line-count svg { width: 12px; height: 12px; }
+#workbench-host .editor-line-comment { width: 28px; height: 28px; }
+@media (prefers-reduced-motion: no-preference) {
+    #workbench-host .workbench-icon { transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+}
+
+/* Text-only actions keep their appearance through hover and keyboard focus. */
+.ui-text-button { display: inline-flex; align-items: center; min-height: var(--ui-control); padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ui-foreground); font: var(--ui-text) var(--ui-font); text-align: left; box-shadow: none; }
+.ui-text-button:hover, .ui-text-button:focus-visible { background: transparent; color: var(--ui-foreground); text-decoration: underline; text-underline-offset: 4px; }
+.ui-text-button:focus-visible { outline: 1px solid var(--ui-focus); outline-offset: 3px; }
+.ui-text-button:disabled { opacity: .5; cursor: default; }

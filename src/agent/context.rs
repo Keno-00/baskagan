@@ -34,6 +34,27 @@ fn link(path: &Path) -> bool {
         metadata.file_type().is_symlink()
     }
 }
+pub(crate) fn canonical_buffer_path(path: &Path, allow_missing: bool) -> Result<PathBuf, String> {
+    Ok(match path.canonicalize() {
+        Ok(path) => path,
+        Err(e)
+            if e.kind() == std::io::ErrorKind::NotFound && allow_missing && path.is_absolute() =>
+        {
+            let mut ancestor = path;
+            let mut missing = Vec::new();
+            while !ancestor.try_exists().map_err(|e| e.to_string())? {
+                missing.push(ancestor.file_name().ok_or("Invalid buffer path.")?);
+                ancestor = ancestor.parent().ok_or("Invalid buffer path.")?;
+            }
+            let mut resolved = ancestor.canonicalize().map_err(|e| e.to_string())?;
+            for name in missing.into_iter().rev() {
+                resolved.push(name);
+            }
+            resolved
+        }
+        Err(e) => return Err(e.to_string()),
+    })
+}
 impl Context {
     pub fn record_buffers(&self, manifest: &mut super::manifest::Manifest) -> Result<(), String> {
         let mut buffers: Vec<_> = self.buffers.iter().collect();
@@ -67,7 +88,7 @@ impl Context {
         let mut total = 0;
         for buffer in buffers.as_array().into_iter().flatten() {
             let path = Path::new(buffer["path"].as_str().ok_or("Buffer has no path.")?);
-            let canonical = path.canonicalize().map_err(|e| e.to_string())?;
+            let canonical = canonical_buffer_path(path, buffer["exists"] == false)?;
             // Editors from other projects are not context for this run.
             let Ok(relative) = canonical.strip_prefix(&context.root) else {
                 continue;
@@ -78,7 +99,12 @@ impl Context {
             {
                 continue;
             }
-            let resolved = context.resolve(relative.to_str().ok_or("Invalid buffer path.")?)?;
+            let relative = relative.to_str().ok_or("Invalid buffer path.")?;
+            let resolved = if buffer["exists"] == false {
+                context.target(relative)?
+            } else {
+                context.resolve(relative)?
+            };
             let text = buffer["text"].as_str().ok_or("Buffer has no text.")?;
             total += text.len();
             if text.len() > FILE_LIMIT || total > 256 * 1024 || context.buffers.len() >= 24 {
@@ -90,6 +116,14 @@ impl Context {
     }
     pub(crate) fn resolve(&self, relative: &str) -> Result<PathBuf, String> {
         let candidate = self.target(relative)?;
+        if self.buffers.contains_key(&candidate)
+            || self
+                .buffers
+                .keys()
+                .any(|file| file.starts_with(&candidate) && file != &candidate)
+        {
+            return Ok(candidate);
+        }
         let path = candidate.canonicalize().map_err(|e| e.to_string())?;
         if !path.starts_with(&self.root) {
             return Err("Path leaves the project.".into());
@@ -226,6 +260,14 @@ impl Context {
         }
         let limit = args["maxResults"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
         let mut pending = VecDeque::from([path.to_path_buf()]);
+        let mut unsaved: Vec<_> = self
+            .buffers
+            .keys()
+            .filter(|file| file.starts_with(path) && *file != path && !file.exists())
+            .cloned()
+            .collect();
+        unsaved.sort();
+        pending.extend(unsaved);
         let mut matches = Vec::new();
         let mut scanned = 0;
         let mut visited = 0;
@@ -332,10 +374,12 @@ impl Context {
             "sde_list_directory" => {
                 let mut entries = Vec::new();
                 let mut scanned = 0;
-                for entry in std::fs::read_dir(&path)
-                    .map_err(|e| e.to_string())?
-                    .take(1001)
-                {
+                let disk = match std::fs::read_dir(&path) {
+                    Ok(entries) => Some(entries),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                    Err(e) => return Err(e.to_string()),
+                };
+                for entry in disk.into_iter().flatten().take(1001) {
                     scanned += 1;
                     if scanned > 1000 {
                         break;
@@ -346,6 +390,17 @@ impl Context {
                         continue;
                     }
                     entries.push(json!({"name":name,"kind":if entry.file_type().map_err(|e|e.to_string())?.is_dir(){"folder"}else{"file"}}));
+                }
+                for file in self.buffers.keys().filter(|file| !file.exists()) {
+                    if let Ok(relative) = file.strip_prefix(&path) {
+                        let mut components = relative.components();
+                        if let Some(Component::Normal(name)) = components.next() {
+                            let name = name.to_string_lossy();
+                            if !entries.iter().any(|entry| entry["name"] == name.as_ref()) {
+                                entries.push(json!({"name":name,"kind":if components.next().is_some(){"folder"}else{"file"},"source":"editor"}));
+                            }
+                        }
+                    }
                 }
                 entries.sort_by_key(|e| e["name"].as_str().unwrap_or_default().to_string());
                 let truncated = scanned > 1000 || entries.len() > 100;
@@ -361,7 +416,7 @@ pub fn tools() -> Value {
         {"type":"function","name":"sde_list_directory","description":"List an immediate project directory. Private/generated files and links are excluded. Folder references do not preload file contents.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}},
         {"type":"function","name":"sde_read_file","description":"Read bounded project text by line. Uses the editor snapshot captured for this turn when available. Returns source and content revision.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"startLine":{"type":"integer","minimum":1},"lineCount":{"type":"integer","minimum":1,"maximum":400}},"required":["path"],"additionalProperties":false}},
         {"type":"function","name":"sde_search_text","description":"Search literal, case-sensitive text inside a project file or directory. Uses captured editor buffers. Excludes private/generated paths and links. Bounded to 500 files, 4 MB and 100 results; truncated means results are incomplete.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"query":{"type":"string","minLength":1,"maxLength":1024},"maxResults":{"type":"integer","minimum":1,"maximum":100}},"required":["path","query"],"additionalProperties":false}},
-        {"type":"function","name":"sde_propose_file","description":"Propose a complete replacement of an existing UTF-8 file in an isolated copy, never the live project. Read first and pass its exact content revision. Preserves BOM/line endings. Returns a pending review, not an applied or tested change. After the first proposal, reads use the isolated snapshot.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"expectedRevision":{"type":"string"},"text":{"type":"string"}},"required":["path","expectedRevision","text"],"additionalProperties":false}}
+        {"type":"function","name":"sde_propose_file","description":"Propose UTF-8 file content in an isolated copy, never the live project. For existing files read first and pass the exact content revision. On Windows, use expectedRevision=absent to propose a new file, including new parent folders; the host rejects existing paths. Preserves BOM/line endings. Returns a pending review, not an applied or tested change. After the first proposal, reads use the isolated snapshot.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"expectedRevision":{"type":"string"},"text":{"type":"string"}},"required":["path","expectedRevision","text"],"additionalProperties":false}}
     ])
 }
 
@@ -545,5 +600,29 @@ mod tests {
                 .to_string()
                 .contains(".env")
         );
+    }
+    #[test]
+    fn unsaved_new_files_are_readable_without_creating_live_files() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("notes/new.txt");
+        let context = Context::new(
+            root.path(),
+            &json!([{"path":file,"text":"unsaved needle","exists":false,"original":null}]),
+        )
+        .unwrap();
+        let read = context
+            .call("sde_read_file", &json!({"path":"notes/new.txt"}))
+            .unwrap();
+        assert_eq!(read["source"], "editor");
+        assert_eq!(read["text"], "1: unsaved needle");
+        let search = context
+            .call("sde_search_text", &json!({"path":".","query":"needle"}))
+            .unwrap();
+        assert_eq!(search["matches"].as_array().unwrap().len(), 1);
+        let listing = context
+            .call("sde_list_directory", &json!({"path":"notes"}))
+            .unwrap();
+        assert!(listing.to_string().contains("new.txt"));
+        assert!(!root.path().join("notes").exists());
     }
 }

@@ -191,7 +191,8 @@ impl Snapshot {
             let Some(path) = buffer["path"].as_str() else {
                 continue;
             };
-            let canonical = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+            let canonical =
+                super::context::canonical_buffer_path(Path::new(path), buffer["exists"] == false)?;
             let Ok(relative) = canonical.strip_prefix(&snapshot.root) else {
                 continue;
             };
@@ -201,12 +202,36 @@ impl Snapshot {
                 continue;
             }
             let key = relative_key(relative)?;
+            if buffer["exists"] == false && !snapshot.manifest.files.contains_key(&key) {
+                context.resolve(relative.to_str().ok_or("Invalid editor path.")?)?;
+                if snapshot.manifest.files.len() >= 2000 {
+                    return Err("Project snapshot exceeds 2,000 files.".into());
+                }
+                for name in ["base", "work"] {
+                    std::fs::create_dir_all(
+                        snapshot.folder.join(name).join(relative).parent().unwrap(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                snapshot.manifest.files.insert(
+                    key.clone(),
+                    Baseline {
+                        disk_revision: ABSENT.into(),
+                        base_revision: ABSENT.into(),
+                        source: "editor".into(),
+                        proposed_revision: None,
+                        saved_revision: None,
+                    },
+                );
+            }
             let Some(baseline) = snapshot.manifest.files.get_mut(&key) else {
                 return Err("An editor file is excluded from the snapshot.".into());
             };
             let text = buffer["text"].as_str().ok_or("Missing editor snapshot.")?;
             if let Some(original) = buffer["original"].as_str() {
                 baseline.disk_revision = revision(original.as_bytes());
+            } else if buffer["exists"] == false {
+                baseline.disk_revision = ABSENT.into();
             }
             baseline.base_revision = revision(text.as_bytes());
             baseline.source = "editor".into();
@@ -279,15 +304,44 @@ impl Snapshot {
         if self.manifest.state != "pending" {
             return Err("This proposal has already been applied to editors.".into());
         }
-        let relative = args["path"]
-            .as_str()
-            .ok_or("Choose an existing project file.")?;
+        let relative = args["path"].as_str().ok_or("Choose a project file.")?;
         let context = Context::new(&self.work_root(), &json!([]))?;
-        let path = context.resolve(relative)?;
+        let path = context.target(relative)?;
         let key = relative_key(
             path.strip_prefix(self.work_root().canonicalize().map_err(|e| e.to_string())?)
                 .map_err(|_| "Path leaves workspace.")?,
         )?;
+        let text = args["text"].as_str().ok_or("Missing replacement text.")?;
+        if text.len() > 128 * 1024 || text.contains('\0') {
+            return Err("Proposals require UTF-8 text under 128 KB.".into());
+        }
+        if args["expectedRevision"] == ABSENT && !self.manifest.files.contains_key(&key) {
+            if self.changed_count() >= 16 || self.manifest.files.len() >= 2000 {
+                return Err("Proposal file limit reached.".into());
+            }
+            let live = Context::new(&self.root, &json!([]))?;
+            if optional_read(&live, &key, 128 * 1024)?.is_some() {
+                return Err(
+                    "The file already exists. Read it before proposing a replacement.".into(),
+                );
+            }
+            super::file_commit::create(&self.work_root(), &key, text)?;
+            let proposed_revision = revision(text.as_bytes());
+            self.manifest.files.insert(
+                key.clone(),
+                Baseline {
+                    disk_revision: ABSENT.into(),
+                    base_revision: ABSENT.into(),
+                    source: "new".into(),
+                    proposed_revision: Some(proposed_revision.clone()),
+                    saved_revision: None,
+                },
+            );
+            self.persist()?;
+            return Ok(
+                json!({"workspaceId":self.id(),"path":key,"revision":proposed_revision,"changedFiles":self.changed_count(),"applied":false}),
+            );
+        }
         let baseline = self
             .manifest
             .files
@@ -298,10 +352,6 @@ impl Snapshot {
             return Err(
                 "File revision changed. Read it again before proposing a replacement.".into(),
             );
-        }
-        let text = args["text"].as_str().ok_or("Missing replacement text.")?;
-        if text.len() > 128 * 1024 || text.contains('\0') {
-            return Err("Proposals require UTF-8 text under 128 KB.".into());
         }
         if self
             .manifest
@@ -315,7 +365,9 @@ impl Snapshot {
             return Err("A proposal can change at most 16 files.".into());
         }
         // Preserve established BOM and line endings while the editor remains the writer.
-        let base = std::fs::read(self.folder.join("base").join(&key)).map_err(|e| e.to_string())?;
+        let base_context = Context::new(&self.folder.join("base"), &json!([]))?;
+        let base =
+            optional_read(&base_context, &key, 128 * 1024)?.unwrap_or_else(|| before.clone());
         let normalized = text.trim_start_matches('\u{feff}').replace("\r\n", "\n");
         let text = format!(
             "{}{}",
@@ -469,7 +521,7 @@ impl Snapshot {
                         .as_deref()
                         .unwrap_or(&baseline.disk_revision)
             });
-            let operation = if before.is_none() {
+            let operation = if baseline.disk_revision == ABSENT {
                 "create"
             } else if after.is_none() {
                 "delete"
@@ -482,13 +534,15 @@ impl Snapshot {
                 .map_err(|_| "Only UTF-8 proposals can be reviewed.")?;
             changes.push(json!({"path":path,"absolutePath":self.root.join(path),"operation":operation,"before":before,"after":after,"diskBefore":live.ok().flatten().and_then(|b|String::from_utf8(b).ok()),"diskRevision":baseline.disk_revision,"revision":expected,"source":baseline.source,"conflict":conflict,"saved":baseline.saved_revision.is_some()}));
         }
-        Ok(json!({"workspaceId":self.id(),"state":self.manifest.state,"changes":changes}))
+        Ok(
+            json!({"workspaceId":self.id(),"state":self.manifest.state,"changes":changes,"structuralSaveAvailable":cfg!(windows)}),
+        )
     }
     pub fn mark_applied_to_editor(&mut self) -> Result<(), String> {
         if self.review()?["changes"].as_array().is_some_and(|changes| {
-            changes
-                .iter()
-                .any(|file| file["operation"] != "modify" || file["conflict"] == true)
+            changes.iter().any(|file| {
+                (!cfg!(windows) && file["operation"] != "modify") || file["conflict"] == true
+            })
         }) {
             return Err(
                 "Resolve conflicts and unsupported file operations before applying to editors."
@@ -549,6 +603,91 @@ mod tests {
     use super::*;
     #[test]
     #[cfg(windows)]
+    fn new_file_proposals_are_isolated_revisable_and_never_replace_existing_files() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("existing.txt"), "keep").unwrap();
+        let project = uuid::Uuid::new_v4().to_string();
+        let mut snapshot = Snapshot::create(
+            root.path(),
+            &project,
+            "new-proposal",
+            &json!([]),
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap();
+        for path in [
+            "existing.txt",
+            "../escape.txt",
+            ".dado/private.txt",
+            "CON",
+            "target/new.txt",
+        ] {
+            assert!(
+                snapshot
+                    .propose(&json!({"path":path,"expectedRevision":"absent","text":"wrong"}))
+                    .is_err()
+            );
+        }
+        let proposed = snapshot
+            .propose(&json!({"path":"notes/new.txt","expectedRevision":"absent","text":"first"}))
+            .unwrap();
+        assert_eq!(proposed["applied"], false);
+        assert!(!root.path().join("notes").exists());
+        assert!(
+            snapshot
+                .propose(
+                    &json!({"path":"notes/new.txt","expectedRevision":"absent","text":"stale"})
+                )
+                .is_err()
+        );
+        snapshot.propose(&json!({"path":"notes/new.txt","expectedRevision":proposed["revision"],"text":"revised"})).unwrap();
+        let mut recovered =
+            Snapshot::load(root.path(), &project, "new-proposal", snapshot.id()).unwrap();
+        let review = recovered.review().unwrap();
+        assert_eq!(review["changes"][0]["operation"], "create");
+        assert_eq!(review["changes"][0]["before"], "");
+        assert_eq!(review["changes"][0]["after"], "revised");
+        std::fs::create_dir(root.path().join("notes")).unwrap();
+        std::fs::write(root.path().join("notes/new.txt"), "external").unwrap();
+        assert_eq!(recovered.review().unwrap()["changes"][0]["conflict"], true);
+        assert!(recovered.mark_applied_to_editor().is_err());
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("notes/new.txt")).unwrap(),
+            "external"
+        );
+    }
+    #[test]
+    #[cfg(windows)]
+    fn unsaved_new_buffer_survives_snapshot_review_and_explicit_save() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("notes/new.txt");
+        let project = uuid::Uuid::new_v4().to_string();
+        let mut snapshot = Snapshot::create(
+            root.path(),
+            &project,
+            "new-buffer",
+            &json!([{"path":file,"exists":false,"original":null,"text":"unsaved draft"}]),
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(snapshot.work_root().join("notes/new.txt")).unwrap(),
+            "unsaved draft"
+        );
+        snapshot.propose(&json!({"path":"notes/new.txt","expectedRevision":revision(b"unsaved draft"),"text":"reviewed draft"})).unwrap();
+        let review = snapshot.review().unwrap();
+        let change = &review["changes"][0];
+        assert_eq!(change["operation"], "create");
+        assert_eq!(change["before"], "unsaved draft");
+        assert!(change["diskBefore"].is_null());
+        assert_eq!(change["conflict"], false);
+        assert!(!file.exists());
+        snapshot.mark_applied_to_editor().unwrap();
+        snapshot.save_structural_change(&json!({"path":"notes/new.txt","revision":change["revision"],"text":"final editor text"})).unwrap();
+        assert_eq!(std::fs::read_to_string(file).unwrap(), "final editor text");
+    }
+    #[test]
+    #[cfg(windows)]
     fn structural_saves_require_staging_preserve_conflicts_and_cannot_replay() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("old.txt"), "baseline\r\n").unwrap();
@@ -570,9 +709,7 @@ mod tests {
         let mut delete = json!({"path":"old.txt","revision":ABSENT,"text":"baseline\r\n"});
         assert!(snapshot.save_structural_change(&create).is_err());
         assert!(!root.path().join("notes").exists());
-        // The editor handoff owns this transition; its UI wiring is separate.
-        snapshot.manifest.state = "applied_to_editor".into();
-        snapshot.persist().unwrap();
+        snapshot.mark_applied_to_editor().unwrap();
         let mut stale = create.clone();
         stale["revision"] = json!("stale");
         assert!(snapshot.save_structural_change(&stale).is_err());
@@ -685,7 +822,7 @@ mod tests {
                 .iter()
                 .all(|f| f["conflict"] == false)
         );
-        assert!(snapshot.mark_applied_to_editor().is_err());
+        snapshot.mark_applied_to_editor().unwrap();
         std::fs::create_dir(root.path().join("notes")).unwrap();
         std::fs::write(root.path().join("notes/new.txt"), "someone else's file").unwrap();
         std::fs::write(root.path().join("empty.txt"), "concurrent edit").unwrap();

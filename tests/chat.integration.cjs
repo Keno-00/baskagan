@@ -1,64 +1,76 @@
-const { chromium } = require('playwright');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-
-(async () => {
-    const browser = await chromium.launch({ headless: true, channel: process.env.DADO_TEST_BROWSER || undefined });
-    try {
-        const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
-        const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
-        await page.setContent(`<style>${fs.readFileSync('src/style.css', 'utf8')}</style><div id="main"><header class="menu-bar">File</header><div class="workspace"><div id="systems-chat" class="systems-chat"><main><span>Systems view</span></main><section id="chat-host"></section></div><aside class="side-panel"></aside></div><footer class="status-bar"></footer></div>`);
-        await page.addScriptTag({path: 'ui/annotations.js'});
-        await page.addScriptTag({path: 'ui/chat.js'});
-        await page.evaluate(() => { window.requests = []; startChat(message => { requests.push(message); if (message.action === 'attach') queueMicrotask(() => dadoChat.attach([{path:'C:\\project\\main.rs', name:'main.rs', size:123}])); }); });
-        const input = page.getByRole('textbox', {name:'Message', exact:true});
-        const height = async selector => page.locator(selector).evaluate(el => el.getBoundingClientRect().height);
-        const originalHeight = await height('main');
-        await input.fill(Array.from({length:80}, (_, i) => `Line ${i}`).join('\n'));
-        await page.waitForTimeout(100);
-        assert.equal(await height('main'), originalHeight, 'draft must not reduce systems area');
-        assert.ok(await height('.chat-composer') <= await height('#chat-host') / 2 + 1, 'composer stays within half chat height');
-        assert.ok(await input.evaluate(el => el.scrollHeight > el.clientHeight), 'long draft scrolls');
-        await input.fill('First local message'); await input.press('Enter');
-        assert.equal(await page.locator('.chat-user-message').count(), 1);
-        assert.equal(await input.inputValue(), '');
-        await input.fill('<script>literal text</script>'); await input.press('Shift+Enter');
-        assert.equal(await page.locator('.chat-user-message').count(), 1, 'Shift+Enter must leave the message as a draft');
-        assert.equal(await input.inputValue(), '<script>literal text</script>\n');
-        await input.press('a'); await input.press('Enter');
-        assert.ok((await page.locator('.chat-message-text').last().innerText()).includes('<script>literal text</script>\na'));
-        await page.getByRole('button', {name:'Attach files', exact:true}).click();
-        await page.getByRole('button', {name:'Remove main.rs'}).waitFor();
-        await page.getByRole('button', {name:'Remove main.rs'}).click();
-        assert.ok(await page.getByRole('button', {name:'Send message', exact:true}).isDisabled());
-        await page.getByRole('button', {name:'Attach files', exact:true}).click();
-        await page.getByRole('button', {name:'Remove main.rs'}).waitFor();
-        await page.getByRole('button', {name:'Send message', exact:true}).click();
-        assert.equal(await page.locator('.chat-user-message').count(), 3);
-        assert.equal(await page.locator('.chat-message-files').innerText(), 'main.rs');
-        const choose = async label => { await page.locator('.chat-divider').hover(); await page.getByRole('button',{name:'Change chat layout',exact:true}).click(); await page.getByRole('button',{name:label,exact:true}).click(); await page.waitForTimeout(50); };
-        await choose('Balanced layout');
-        assert.ok(Math.abs(await height('main') - await height('#chat-host')) <= 1);
-        await choose('Chat larger');
-        assert.ok(Math.abs(await height('#chat-host') / await height('main') - 3) < 0.01);
-        await input.fill('A draft stays here');
-        await page.evaluate(() => document.querySelector('.workspace').classList.add('panel-open'));
-        await choose('Systems larger');
-        assert.ok(Math.abs(await height('main') / await height('#chat-host') - 3) < 0.01);
-        assert.equal(await input.inputValue(), 'A draft stays here');
-        assert.equal(await page.locator('.chat-user-message').count(), 3);
-        assert.ok(await page.locator('.chat-history').evaluate(el => getComputedStyle(el).maskImage.includes('linear-gradient')));
-        await input.fill('');
-        await page.locator('.chat-dots').hover();
-        const alignment = await page.locator('.chat-dots').evaluate(button => {
-            const box = button.getBoundingClientRect(), icon = button.querySelector('svg').getBoundingClientRect();
-            return {x: box.x + box.width / 2 - icon.x - icon.width / 2, y: box.y + box.height / 2 - icon.y - icon.height / 2, width: box.width, height: box.height};
-        });
-        assert.ok(Math.abs(alignment.x) < 0.5 && Math.abs(alignment.y) < 0.5, 'dots icon must be centered inside its hover pill');
-        assert.ok(alignment.width > alignment.height, 'hover background should be pill shaped');
-        await page.screenshot({path:'target/chat-preview.png'});
-        assert.deepEqual(errors, []);
-        console.log('Chat integration passed');
-    } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {nativeApp}=require('./native_app.cjs');
+(async()=>{
+ const app=await nativeApp();const {page,project,errors}=app;
+ try {
+  const input=page.getByRole('textbox',{name:'Message',exact:true});
+  const mainHeight=await page.locator('.systems-chat > main').evaluate(el=>el.clientHeight);
+  await input.fill('Long draft\n'.repeat(80));
+  assert.equal(await page.locator('.systems-chat > main').evaluate(el=>el.clientHeight),mainHeight);
+  assert.ok(await input.evaluate(el=>el.scrollHeight>el.clientHeight));
+  const mask=await page.locator('.chat-history').evaluate(el=>getComputedStyle(el).maskImage);
+  assert.ok((mask.match(/rgba\(0, 0, 0, 0\)/g)||[]).length===2,'history fades at both edges');
+  await input.fill('Undo ');await input.type('native');await input.press('Control+z');
+  assert.equal(await input.inputValue(),'Undo ','native draft undo is retained');
+  await input.fill('');
+  await page.getByRole('button',{name:'Chat actions',exact:true}).click();
+  const filter=page.getByRole('textbox',{name:'Search actions',exact:true});await filter.waitFor({state:'visible'});
+  await page.waitForFunction(()=>document.activeElement?.id==='chat-action-search');
+  await filter.fill('files');
+  await page.getByRole('option',{name:'Add files',exact:true}).waitFor();
+  await filter.press('Escape');await filter.waitFor({state:'hidden'});
+  await page.waitForFunction(()=>document.activeElement===document.querySelector('.chat-composer textarea'),{},{timeout:5000}).catch(async error=>{console.error(await page.evaluate(()=>({active:document.activeElement?.outerHTML,actions:document.querySelector('#chat-action-menu')?.outerHTML.slice(0,300)})));throw error;});
+  assert.ok(await input.evaluate(el=>document.activeElement===el),'Escape returns to draft');
+  await input.type('/model');
+  await page.getByRole('option',{name:'Models',exact:true}).waitFor();
+  assert.equal(await input.inputValue(),'/model');
+  await input.press('ArrowDown');await input.press('ArrowUp');await input.press('Escape');
+  assert.equal(await input.inputValue(),'/model','dismissal preserves slash text');
+  await page.evaluate(()=>{
+   dadoModelSelector.catalog([{model:'fixture',displayName:'Fixture',supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'high'}]}]);
+   dadoModelSelector.restore({model:'fixture',reasoningEffort:'low'});
+  });
+  const modelButton=page.getByRole('button',{name:'Select model and reasoning',exact:true});
+  await page.waitForFunction(()=>document.querySelector('.model-select-trigger').textContent==='Fixture');
+  await page.evaluate(()=>{
+   const selectors=['.chat-composer','#model-selector-mount','.chat-history'];
+   const geometry=()=>selectors.map(s=>{const r=document.querySelector(s).getBoundingClientRect();return [r.x,r.y,r.width,r.height];}).flat();
+   const baseline=geometry();window.pickerShifts=[];
+   window.pickerObserver=new MutationObserver(()=>{const current=geometry();if(current.some((v,i)=>Math.abs(v-baseline[i])>.6))window.pickerShifts.push(current);});
+   pickerObserver.observe(document.querySelector('#chat-host'),{childList:true,subtree:true,attributes:true});
+  });
+  for(let i=0;i<3;i++){
+   await modelButton.click();await page.getByRole('listbox',{name:'Model selector'}).waitFor();
+   await page.getByRole('slider',{name:'Reasoning level'}).waitFor();
+   await input.click();
+   await page.getByRole('listbox',{name:'Model selector'}).waitFor({state:'hidden'});
+  }
+  const shifts=await page.evaluate(()=>{pickerObserver.disconnect();return pickerShifts;});
+  assert.deepEqual(shifts,[],'model picker must not move the composer or history, including intermediate renders');
+  await input.fill('Existing draft');
+  await page.evaluate(()=>{const chat=dadoChat.snapshot();dadoChat.setConversation(chat.id,{draft:'Existing draft',attachments:[{path:'fixture.txt',name:'fixture.txt'}],skills:[{id:'fixture-skill',name:'Fixture skill',scope:'project-private',description:'Fixture'}]});});
+  await page.locator('.attachment-card[aria-label="File: fixture.txt"]').hover();await page.getByRole('button',{name:'Remove fixture.txt'}).click();
+  await page.getByRole('button',{name:'Remove fixture.txt'}).waitFor({state:'detached'});
+  assert.equal(await input.inputValue(),'Existing draft');
+  await page.getByRole('button',{name:'Remove Fixture skill'}).click();
+  await page.getByRole('button',{name:'Remove Fixture skill'}).waitFor({state:'detached'});
+  const skillFolder=path.join(project,'.agents','skills','fixture');fs.mkdirSync(skillFolder,{recursive:true});
+  fs.writeFileSync(path.join(skillFolder,'SKILL.md'),'---\nname: fixture\ndescription: Local UI fixture\n---\nUse this test skill.\n');
+  await page.getByRole('button',{name:'Chat actions',exact:true}).click();
+  await page.getByRole('option',{name:'Skills',exact:true}).click();
+  const skillFilter=page.getByRole('textbox',{name:'Find skills',exact:true});await skillFilter.waitFor({state:'visible'});
+  await page.waitForFunction(()=>document.activeElement?.id==='chat-skill-search');
+  // Supply the catalog RPC locally; this native fixture has no agent process.
+  await page.evaluate(()=>{for(let id=1;id<=100;id++)dadoChat.reply({id,result:{skills:[{id:'fixture',name:'fixture',description:'Local UI fixture',scope:'repo',path:'fixture/SKILL.md',enabled:true}],errors:[]}});});
+  await skillFilter.fill('fixture');await page.getByRole('option',{name:'fixture',exact:true}).waitFor();
+  await skillFilter.press('Enter');await page.getByRole('button',{name:'Remove fixture',exact:true}).waitFor();
+  const geometry=await page.locator('.chat-attach').evaluate(el=>{const a=el.getBoundingClientRect(),b=el.querySelector('svg').getBoundingClientRect();return [Math.abs(a.x+a.width/2-b.x-b.width/2),Math.abs(a.y+a.height/2-b.y-b.height/2)];});
+  assert.ok(geometry.every(delta=>delta<.6),'composer icon is centered');
+  await page.getByRole('button',{name:'Chat actions',exact:true}).click();
+  await filter.waitFor({state:'visible'});
+  await page.screenshot({path:'target/ui-reference/composer-actions.png'});
+  assert.deepEqual(errors,[]);console.log('Native composer passed: draft growth, both fades, action focus/search/keys, slash dismissal, attachment/skill removal, skill selection and icon alignment.');
+ } finally {await app.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

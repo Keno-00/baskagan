@@ -1,0 +1,16 @@
+.systems-dismiss {position:fixed;inset:0;z-index:60;}
+.systems-stage:has(.systems-dialog,.systems-menu) {z-index:10;}
+.systems-menu,.systems-dialog {position:fixed;z-index:61;background:var(--ui-panel-base);color:var(--ui-panel-foreground);border-radius:var(--ui-radius);padding:var(--ui-space);font:var(--ui-text) var(--ui-font);}
+.systems-menu {width:222px;max-height:calc(100vh - 16px);overflow:auto;}
+.systems-menu button {display:flex;align-items:center;gap:var(--ui-space);width:100%;height:var(--ui-control-small);padding:0 var(--ui-space);border:0;border-radius:var(--ui-radius);background:transparent;color:inherit;font:inherit;text-align:left;}
+.systems-menu button:hover,.systems-menu button:focus-visible {background:var(--ui-panel-hover);outline:2px solid transparent;}
+.systems-menu button:focus-visible {outline-color:var(--ui-focus);}
+.systems-menu button:disabled {opacity:.4;}
+.systems-menu svg {width:var(--ui-icon-small);height:var(--ui-icon-small);fill:none;stroke:currentColor;stroke-width:1.6;}
+.systems-dialog {left:50%;top:40%;transform:translate(-50%,-50%);width:min(480px,calc(100vw - 32px));display:grid;gap:var(--ui-space);}
+.systems-dialog input {background:var(--ui-panel-control);color:var(--ui-panel-foreground);border:0;border-radius:var(--ui-radius);padding:var(--ui-space);font:inherit;}
+.systems-dialog-actions {display:flex;justify-content:flex-end;gap:var(--ui-gap);}
+.systems-results {max-height:40vh;overflow:auto;display:grid;gap:var(--ui-gap);}
+.systems-results button {background:transparent;color:inherit;border:0;text-align:left;font:inherit;overflow-wrap:anywhere;}
+.scene-lasso {fill:var(--ui-scene-ink);fill-opacity:.12;stroke:var(--ui-scene-ink);stroke-width:1.5;pointer-events:none;}
+

@@ -22,6 +22,7 @@ struct Request {
 
 #[component]
 pub fn ChatPanel(root: Option<PathBuf>) -> Element {
+    let mut general = use_context::<Signal<crate::user_settings::General>>();
     let client = use_hook(|| std::rc::Rc::new(crate::ai::Client::start()));
     let events = client.clone();
     use_future(move || {
@@ -65,7 +66,7 @@ pub fn ChatPanel(root: Option<PathBuf>) -> Element {
         let client = client.clone();
         async move {
             let mut bridge = document::eval(&format!(
-                "{}\n{}\n{}\n{}\n{}\n{}\n{}\nwindow.startChat(message => dioxus.send(message), {});",
+                "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\nwindow.startChat(message => dioxus.send(message), {});",
                 include_str!("../ui/annotations.js"),
                 include_str!("../ui/review.js"),
                 include_str!("../ui/comment_context.js"),
@@ -73,11 +74,35 @@ pub fn ChatPanel(root: Option<PathBuf>) -> Element {
                 include_str!("../ui/commands.js"),
                 include_str!("../ui/skills.js"),
                 include_str!("../ui/chat.js"),
+                include_str!("../ui/concepts.js"),
                 json!(include_str!("../assets/dioxus-avatar.txt"))
             ));
             let mut known = std::collections::HashSet::new();
             while let Ok(request) = bridge.recv::<Request>().await {
                 match request.action.as_str() {
+                    "preferences-load" | "preferences-save" => {
+                        let result = crate::user_settings::home().and_then(|home| {
+                            if request.action == "preferences-load" {
+                                crate::user_settings::load(&home).map(|(settings, exists)| {
+                                    general.set(settings.general.clone());
+                                    json!({"settings":settings,"exists":exists})
+                                })
+                            } else {
+                                let settings: crate::user_settings::Settings =
+                                    serde_json::from_value(request.state.unwrap_or_default())
+                                        .map_err(|e| e.to_string())?;
+                                crate::user_settings::save(&home, &settings).map(|_| {
+                                    general.set(settings.general.clone());
+                                    json!(null)
+                                })
+                            }
+                        });
+                        let reply = match result {
+                            Ok(result) => json!({"id":request.id,"result":result}),
+                            Err(error) => json!({"id":request.id,"error":error}),
+                        };
+                        let _ = document::eval(&format!("window.dadoChat?.reply({reply});"));
+                    }
                     "commands" | "command" => {
                         let valid = current_root().is_some() && request.root == current_root();
                         let result = if request.action == "commands" {
@@ -208,5 +233,5 @@ pub fn ChatPanel(root: Option<PathBuf>) -> Element {
             }
         }
     });
-    rsx! { section { id: "chat-host", aria_label: "Chat" } crate::model_selector::ModelSelector {} crate::permission_selector::PermissionSelector {} }
+    rsx! { section { id: "chat-host", aria_label: "Chat", crate::chat_history::ChatHistory { root: root.clone() } crate::composer::Composer {} } crate::annotations::Annotations {} crate::skill_creator::SkillCreator {} }
 }

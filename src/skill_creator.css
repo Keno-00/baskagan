@@ -1,0 +1,24 @@
+.skill-creator {width:min(680px,calc(100vw - 32px));max-height:85vh;padding:16px;border:0;border-radius:16px;background:var(--ui-panel-base);color:var(--ui-panel-foreground);overflow:auto;font:var(--ui-text) var(--ui-font);}
+.skill-creator::backdrop {background:var(--ui-scrim);}
+.skill-creator h2 {font-size:16px;margin:0;font-weight:500;}
+.skill-creator .sheet-heading {margin-bottom:16px;}
+.skill-creator form {display:block;}
+.skill-creator .settings-row {grid-template-columns:130px minmax(0,1fr);gap:16px;}
+.skill-creator .settings-control .settings-input {max-width:none;}
+.skill-creator .settings-control textarea {min-height:66px;}
+.skill-creator-actions {display:flex;justify-content:flex-end;margin:12px 0 0;}
+.skill-creator-actions .chat-compact-action {background:var(--ui-panel-selected);color:var(--ui-panel-foreground);}
+.skill-existing {margin-top:16px;}
+.skill-existing > summary {padding:8px;cursor:pointer;color:var(--ui-muted);}
+.skill-draft-list {max-height:180px;overflow:auto;}
+.skill-draft-row {display:flex;align-items:center;gap:8px;padding:6px 8px;}
+.skill-draft-row svg {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;flex-shrink:0;}
+.skill-item-name {flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.skill-item-scope,.skill-loading {font-size:var(--ui-text-small);color:var(--ui-muted);}
+.skill-creator button:focus-visible,.skill-creator input:focus-visible,.skill-creator textarea:focus-visible,.skill-creator select:focus-visible {outline:2px solid var(--ui-focus);outline-offset:-2px;}
+:root[data-theme=dark] .skill-creator {color-scheme:dark;}
+
+.skill-creator svg {display:block;width:var(--ui-icon-small);height:var(--ui-icon-small);fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+.skill-creator button,.skill-creator input,.skill-creator textarea,.skill-creator select {font-family:var(--ui-font);font-size:var(--ui-text);}
+.skill-creator .sidebar-icon {color:var(--ui-muted);background:transparent;}
+.skill-creator .sidebar-icon:hover {background:var(--ui-panel-hover);}

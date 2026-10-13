@@ -9,3 +9,4 @@ pub mod protocol;
 pub mod runtime;
 pub mod skills;
 pub mod snapshot;
+pub mod swarm;
