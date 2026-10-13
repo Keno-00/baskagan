@@ -16,7 +16,7 @@
     "@codemirror/lang-markdown": "^6",
     "@codemirror/lang-html": "^6",
     "@codemirror/lang-css": "^6",
-    "@xterm/xterm": "^5",
+    "@xterm/xterm": "^6",
     "@xterm/addon-fit": "^0.10"
   },
   "devDependencies": { "esbuild": "^0.25", "playwright": "^1" }
