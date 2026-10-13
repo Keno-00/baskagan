@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible problem with Baskagan SDE.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: Please keep the report focused. Remove credentials, private project content, and personal file paths from logs or screenshots.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem in a few sentences.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      description: Include the version or commit if known.
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a project
+        2. Select a concept
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Remove private source, credentials, and local paths before sharing.

@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a change to the project or development workflow.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation or friction you encountered.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would a better outcome look like?
+      description: Focus on the result that would help, rather than prescribing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Why does this matter in your workflow?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds or alternatives tried

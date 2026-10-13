@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/Keno-00/baskagan/security/advisories/new
+    about: Do not post vulnerability details in a public issue.
