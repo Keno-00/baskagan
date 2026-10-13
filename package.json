@@ -19,5 +19,5 @@
     "@xterm/xterm": "^5",
     "@xterm/addon-fit": "^0.10"
   },
-  "devDependencies": { "esbuild": "^0.25", "playwright": "^1" }
+  "devDependencies": { "esbuild": "^0.28", "playwright": "^1" }
 }
